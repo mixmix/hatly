@@ -1,4 +1,5 @@
 const { h, Array: MutantArray, computed, map } = require('mutant')
+const Segment = require('./segment')
 
 const HEIGHT = 26
 const WIDTH = 25
@@ -10,57 +11,38 @@ const WIDTH = 25
 // 3: 11 3 11
 // 4:  9 5 9
 
-const initialState = Array(WIDTH*HEIGHT)
-  .fill(null)
-  .map((cel, i) => {
-    const column = getCol(i)
-    const row = getRow(i)
-    const radius = Math.floor(row / 2)
-
-    // NOTE 12 is hardcoded based on WIDTH)
-    return (column >= 12 - radius) && (column <= 12 + radius)
-      ? 0
-      : null
-  })
 
 const state = {
-  board: MutantArray(initialState),
+  width: WIDTH,
+  height: HEIGHT,
+  board: MutantArray(initialState()),
   colors: MutantArray([ 'teal', 'hotpink', 'rebeccapurple' ])
 }
 const colorLabels = [ 'background', 'primary', 'secondary' ]
 
 const app = h('App', [
-  computed([state.board, state.colors], (board, colors) => {
-    const style = {
-      display: 'grid',
-      'grid-template-columns': `repeat(${WIDTH}, 12px)`,
-      'grid-template-rows': `repeat(${HEIGHT}, 12px)`,
-      'grid-gap': '1px'
-    }
-    return h('Drawing', { style }, [
-      board.map((cel, i) => {
-        if (cel === null) return
-        
-        const style = {
-          'grid-column': getCol(i) + 1, // css-grid starts at 1
-          'grid-row': getRow(i) + 1,
-          'background-color': colors[cel]
-        }
-
-        return h('Cel', { 
-          style,
-          'ev-click': () => incrementCel(cel, i)
-        })
-      })
-    ])
-  }),
-  h('Colors', 
-    {
+  h('div.settings',
+    { 
       style: {
         display: 'grid',
         'grid-template-columns': 'auto 1fr'
       }
-    },
+    }, [
+      Segment(state, { editable: true }),
+      Colors(state),
+    ]
+  ),
+  Preview(state)
+])
+
+function Colors (state) {
+  const style =  {
+      display: 'grid',
+      'grid-template-columns': 'auto 1fr',
+      'grid-gap': '1rem',
+      'align-content': 'start'
+    }
+  return h('Colors', { style },
     colorLabels.map((label, i) => {
       return [
         h('label', label),
@@ -73,27 +55,56 @@ const app = h('App', [
       ]
     })
   )
-])
-
-function incrementCel (cel, i) {
-  state.board.put(i, (cel + 1) % 3)
-
-  const row = getRow(i)
-  const col = getCol(i)
-  const radius = 12 - col
-  if (radius === 0) return
-
-  const mirrorI = row * WIDTH + 12 + radius
-  console.log(i, mirrorI)
-  state.board.put(mirrorI, (cel + 1) % 3)
 }
 
-function getRow (i) {
-  return Math.floor(i / WIDTH)
+function Preview (state) {
+  const dummy = Array(7).fill(null).map((_, i) => i)
+
+  const pixelSize = 10
+  const gapSize = 0
+  const radius = state.height * pixelSize + (state.height - 1) * gapSize
+
+  const style = {
+    width: `${2 * radius}px`,
+    height: `${2 * radius}px`,
+    position: 'relative'
+  }
+
+  return h('Preview', { style }, [
+    dummy.map((_, i) => {
+      const style = {
+        position: 'absolute',
+        transform: `translate(100%, 150%) rotate(${360/7 * i}deg)`,
+        'transform-origin': '50% -5%',
+        filter: 'blur(2px)'
+      }
+      return h('div', { style }, Segment(state, { pixelSize, gapSize }))
+    })
+  ])
 }
 
-function getCol (i) {
-  return i % WIDTH
+function initialState () {
+  return Array(WIDTH*HEIGHT)
+    .fill(null)
+    .map((cel, i) => {
+      const column = getCol(i)
+      const row = getRow(i)
+      const radius = Math.floor(row / 2)
+
+      // NOTE 12 is hardcoded based on WIDTH)
+      return (column >= 12 - radius) && (column <= 12 + radius)
+        ? 0
+        : null
+    })
+
+
+  function getRow (i) {
+    return Math.floor(i / WIDTH)
+  }
+
+  function getCol (i) {
+    return i % WIDTH
+  }
 }
 
 document.body.appendChild(app)
