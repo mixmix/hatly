@@ -4,7 +4,7 @@
   "description": "design knitting patterns for top of hats",
   "main": "index.js",
   "scripts": {
-    "test": "electro index.js"
+    "start": "electro index.js"
   },
   "repository": {
     "type": "git",
