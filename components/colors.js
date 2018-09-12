@@ -4,8 +4,6 @@ const Picker = require('vanilla-picker')
 module.exports = function Colors (state) {
   var activePicker
 
-  const pickerRoot = h('div.picker')
-
   const colors = h('Colors', [
     resolve(state.colors).map((initialColor, i, colors) => {
       const classList = computed(state.activeColor, c => {
@@ -34,12 +32,11 @@ module.exports = function Colors (state) {
           }
         }, color)
       ]
-    }),
-    pickerRoot
+    })
   ])
 
   picker = new Picker({
-    parent: pickerRoot,
+    parent: colors,
     alpha: false
   })
   picker.onChange = function (color) {

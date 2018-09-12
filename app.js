@@ -2,7 +2,7 @@ const { h, Array: MutantArray, Value, resolve, computed } = require('mutant')
 const Segment = require('./components/segment')
 const Colors = require('./components/colors')
 const Preview = require('./components/preview')
-const style = require('./style')
+const css = require('./css')
 
 const HEIGHT = 26
 const WIDTH = 25
@@ -12,7 +12,7 @@ const state = {
   width: WIDTH,
   height: HEIGHT,
   board: MutantArray(initialState()),
-  colors: MutantArray([ 'indianred', 'moccasin', 'pink', 'green', 'purple', 'orange' ]),
+  colors: MutantArray([ 'indianred', 'tan', 'hotpink', 'forestgreen', 'purple', 'orange' ]),
   activeColor: Value(1)
 }
 
@@ -58,4 +58,4 @@ function initialState () {
 }
 
 document.body.appendChild(app)
-document.head.appendChild(style)
+document.head.appendChild(h('style', css))
