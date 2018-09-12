@@ -1,0 +1,3 @@
+Preview {
+  filter: blur(3px)
+}

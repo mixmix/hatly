@@ -1,5 +1,4 @@
 const { h, Array: MutantArray, Value, resolve, computed } = require('mutant')
-const Picker = require('vanilla-picker')
 const Segment = require('./components/segment')
 const Colors = require('./components/colors')
 const Preview = require('./components/preview')
@@ -13,31 +12,24 @@ const state = {
   width: WIDTH,
   height: HEIGHT,
   board: MutantArray(initialState()),
-  colors: MutantArray([ 'teal', 'hotpink', 'rebeccapurple', 'fuchsia' ]),
-  activeColor: Value(0)
+  colors: MutantArray([ 'indianred', 'moccasin', 'pink', 'green', 'purple', 'orange' ]),
+  activeColor: Value(1)
 }
 
 window.addEventListener('keyup', ev => {
   const n = Number(ev.key)
   if (!n) return
 
-  if (n > 0 && n -1 < resolve(state.colors).length) {
+  if (n > 0 && n -1 < resolve(state.colors).length - 1) {
     state.activeColor.set(n - 1)
   }
 })
 
 const app = h('App', [
-  h('div.settings',
-    { 
-      style: {
-        display: 'grid',
-        'grid-template-columns': 'auto 1fr'
-      },
-    }, [
-      Segment(state, { editable: true }),
-      Colors(state),
-    ]
-  ),
+  h('div.settings', [
+    Segment(state, { editable: true }),
+    Colors(state),
+  ]),
   Preview(state)
 ])
 

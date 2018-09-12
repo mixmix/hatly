@@ -2,9 +2,9 @@
   "name": "hatly",
   "version": "0.0.1",
   "description": "design knitting patterns for top of hats",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-    "start": "electro index.js"
+    "start": "electro app.js"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,35 @@
+body {
+  background: #222
+}
+
+App {
+  position: fixed
+  top: 0
+  bottom: 0
+  left: 0
+  right: 0
+
+  display: grid
+  grid-template-columns: auto 1fr
+
+  div.settings {
+    padding: 1rem
+
+    display: grid
+    grid-gap: 2rem
+    align-content: start
+
+    div.Segment {
+      background: #fff
+      padding: 1rem
+    }
+
+    div.Colors {
+      background: #fff
+      padding: 1rem
+    }
+  }
+
+  div.Preview {
+  }
+}

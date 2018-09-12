@@ -15,13 +15,23 @@ Colors {
     -active {
       border: 1px solid #000
     }
+
+    -bridge-color {
+      visibility: hidden
+      margin-top: 4rem
+    }
   }
 
-  input {
+  div {
+    justify-self: stretch
     color: #fff
     font-family: arial, sans
     padding: .2rem
 
     border: none
+
+    -bridge-color {
+      margin-top: 4rem
+    }
   }
 }

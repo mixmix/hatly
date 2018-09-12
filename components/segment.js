@@ -9,7 +9,7 @@ module.exports = function Segment (state, opts = {}) {
   } = state
   const {
     editable,
-    pixelSize = 10,
+    pixelSize = 12,
     gapSize = 1
   } = opts
 
