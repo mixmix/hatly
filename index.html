@@ -1,0 +1,4832 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>---</title>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport" />
+<meta charset=utf-8></head>
+<body></body>
+<script>
+(function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
+const { h, Array: MutantArray, Value, resolve, computed } = require('mutant')
+const Segment = require('./components/segment')
+const Colors = require('./components/colors')
+const Preview = require('./components/preview')
+const css = require('./css')
+
+const HEIGHT = 26
+const WIDTH = 25
+// const JOIN_WIDTH = 1
+
+const state = {
+  width: WIDTH,
+  height: HEIGHT,
+  board: MutantArray(initialState()),
+  colors: MutantArray([ 'indianred', 'tan', 'hotpink', 'forestgreen', 'purple', 'orange' ]),
+  activeColor: Value(1)
+}
+
+window.addEventListener('keyup', ev => {
+  const n = Number(ev.key)
+  if (!n) return
+
+  if (n > 0 && n -1 < resolve(state.colors).length - 1) {
+    state.activeColor.set(n - 1)
+  }
+})
+
+const app = h('App', [
+  h('div.settings', [
+    Segment(state, { editable: true }),
+    Colors(state),
+  ]),
+  Preview(state)
+])
+
+function initialState () {
+  return Array(WIDTH*HEIGHT)
+    .fill(null)
+    .map((cel, i) => {
+      const column = getCol(i)
+      const row = getRow(i)
+      const radius = Math.floor(row / 2)
+
+      // NOTE 12 is hardcoded based on WIDTH)
+      return (column >= 12 - radius) && (column <= 12 + radius)
+        ? 0
+        : null
+    })
+
+
+  function getRow (i) {
+    return Math.floor(i / WIDTH)
+  }
+
+  function getCol (i) {
+    return i % WIDTH
+  }
+}
+
+document.body.appendChild(app)
+document.head.appendChild(h('style', css))
+
+},{"./components/colors":2,"./components/preview":3,"./components/segment":4,"./css":5,"mutant":16}],2:[function(require,module,exports){
+const { h, computed, map, resolve } = require('mutant')
+const Picker = require('vanilla-picker')
+
+module.exports = function Colors (state) {
+  var activePicker
+
+  const colors = h('Colors', [
+    resolve(state.colors).map((initialColor, i, colors) => {
+      const classList = computed(state.activeColor, c => {
+        return [
+          c === i ? '-active' : '',
+          isBridgeColor = i === colors.length -1 ? '-bridge-color' : ''
+        ]
+      })
+      const color = computed(state.colors, colors => colors[i]) 
+
+      return [
+        h('label', {
+          classList,
+          'ev-click': () => state.activeColor.set(i)
+        }, i + 1),
+        h('div', {
+          classList,
+          style: { background: color },
+          // 'ev-input': ev => {
+          //   state.colors.put(i, ev.target.value)
+          // },
+          'ev-click': ev => {
+            activePicker = i
+            picker.setOptions({ color: resolve(color) })
+            picker.openHandler()
+          }
+        }, color)
+      ]
+    })
+  ])
+
+  picker = new Picker({
+    parent: colors,
+    alpha: false
+  })
+  picker.onChange = function (color) {
+    if (activePicker === 'bridge') {
+      state.bridgeColor.set(color.hex.slice(0, 7))
+    } else {
+      state.colors.put(activePicker, color.hex.slice(0, 7))
+    }
+  }
+
+  return colors
+}
+
+},{"mutant":16,"vanilla-picker":51}],3:[function(require,module,exports){
+const { h, computed } = require('mutant')
+const Segment = require('./segment')
+
+module.exports = function Preview (state) {
+  const dummy = Array(7).fill(null).map((_, i) => i)
+
+  const pixelSize = 13
+  const gapSize = 0
+  const radius = (state.height + 1) * pixelSize
+
+  const style = {
+    width: `${2.4 * radius}px`,
+    height: `${2.4 * radius}px`,
+    position: 'relative'
+  }
+  
+  const bridgeColor = computed(state.colors, colors => {
+    return colors[colors.length - 1]
+  })
+
+  return h('Preview', { style }, [
+    dummy.map((_, i) => {
+      const style = {
+        position: 'absolute',
+        transform: `translate(${radius}px, ${radius*1.4}px) rotate(${360/7 * i}deg)`,
+        'transform-origin': `50% -${pixelSize}px`,
+        width: `${state.width * pixelSize}px`,
+        height: `${state.height * pixelSize}px`,
+        background: bridgeColor
+      }
+      return h('div', { style })
+    }),
+    dummy.map((_, i) => {
+      const style = {
+        position: 'absolute',
+        transform: `translate(${radius}px, ${radius*1.4}px) rotate(${360/7 * i}deg)`,
+        'transform-origin': `50% -${pixelSize}px`,
+        filter: 'blur(2px)'
+      }
+      return h('div', { style }, Segment(state, { pixelSize, gapSize }))
+    })
+  ])
+}
+
+
+},{"./segment":4,"mutant":16}],4:[function(require,module,exports){
+const { h, computed, resolve } = require('mutant')
+
+module.exports = function Segment (state, opts = {}) {
+  const {
+    width,
+    height,
+    board,
+    colors
+  } = state
+  const {
+    editable,
+    pixelSize = 12,
+    gapSize = 1
+  } = opts
+
+  return computed([board, colors], (board, colors) => {
+    const style = {
+      display: 'grid',
+      'grid-template-columns': `repeat(${width}, ${pixelSize}px)`,
+      'grid-template-rows': `repeat(${height}, ${pixelSize}px)`,
+      'grid-gap': `${gapSize}px`,
+      width: `${width * pixelSize + (width-1)*gapSize}px`
+    }
+    return h('Segment', { style }, [
+      board.map((cel, i) => {
+        if (cel === null) return
+        
+        const style = {
+          'grid-column': getCol(i) + 1, // css-grid starts at 1
+          'grid-row': getRow(i) + 1,
+          'background-color': colors[cel]
+        }
+
+        if (!editable) return h('Cel', { style })
+
+        return h('Cel', { 
+          style,
+          'ev-click': () => changeColor(cel, i)
+        })
+      })
+    ])
+  })
+
+
+  function changeColor (cel, i) {
+    state.board.put(i, resolve(state.activeColor))
+
+    const row = getRow(i)
+    const col = getCol(i)
+    const radius = 12 - col
+    if (radius === 0) return
+
+    const mirrorI = row * width + 12 + radius
+    state.board.put(mirrorI, resolve(state.activeColor))
+  }
+
+  // repeated...
+  function getRow (i) {
+    return Math.floor(i / width)
+  }
+
+  function getCol (i) {
+    return i % width
+  }
+}
+
+
+},{"mutant":16}],5:[function(require,module,exports){
+
+module.exports = `.App { position: fixed; top: 0; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: auto 1fr; }
+.App > div.settings { padding: 1rem; display: grid; grid-gap: 2rem; align-content: start; }
+.App > div.settings > div.Segment { background: #fff; padding: 1rem; boder: 1px dashed #222; }
+.App > div.settings > div.Colors { background: #fff; padding: 1rem; boder: 1px dashed #222; }
+.Colors { display: grid; grid-template-columns: auto 1fr; grid-gap: .5rem; align-content: start; align-items: center; justify-items: center; }
+.Colors > label { width: 20px; height: 20px; border: 1px solid rgba(0,0,0,0); text-align: center; }
+.Colors > label.-active { border: 1px solid #000; }
+.Colors > label.-bridge-color { visibility: hidden; margin-top: 4rem; }
+.Colors > div { justify-self: stretch; color: #fff; font-family: arial, sans; padding: .2rem; border: none; }
+.Colors > div.-bridge-color { margin-top: 4rem; }
+.Preview { filter: blur(3px); }
+.Document { background-color: silver; color: gray; }
+.Document.-main { padding: 30px; }
+.Document.-main > heading { border-bottom: 1px solid gray; background-color: silver; }
+.Document.-main > heading > h1 { color: black; }
+.Cat { color: black; }
+body { /* background: #222 */; }
+`
+
+},{}],6:[function(require,module,exports){
+/*!
+ * Cross-Browser Split 1.1.1
+ * Copyright 2007-2012 Steven Levithan <stevenlevithan.com>
+ * Available under the MIT License
+ * ECMAScript compliant, uniform cross-browser split method
+ */
+
+/**
+ * Splits a string into an array of strings using a regex or string separator. Matches of the
+ * separator are not included in the result array. However, if `separator` is a regex that contains
+ * capturing groups, backreferences are spliced into the result each time `separator` is matched.
+ * Fixes browser bugs compared to the native `String.prototype.split` and can be used reliably
+ * cross-browser.
+ * @param {String} str String to split.
+ * @param {RegExp|String} separator Regex or string to use for separating the string.
+ * @param {Number} [limit] Maximum number of items to include in the result array.
+ * @returns {Array} Array of substrings.
+ * @example
+ *
+ * // Basic use
+ * split('a b c d', ' ');
+ * // -> ['a', 'b', 'c', 'd']
+ *
+ * // With limit
+ * split('a b c d', ' ', 2);
+ * // -> ['a', 'b']
+ *
+ * // Backreferences in result array
+ * split('..word1 word2..', /([a-z]+)(\d+)/i);
+ * // -> ['..', 'word', '1', ' ', 'word', '2', '..']
+ */
+module.exports = (function split(undef) {
+
+  var nativeSplit = String.prototype.split,
+    compliantExecNpcg = /()??/.exec("")[1] === undef,
+    // NPCG: nonparticipating capturing group
+    self;
+
+  self = function(str, separator, limit) {
+    // If `separator` is not a regex, use `nativeSplit`
+    if (Object.prototype.toString.call(separator) !== "[object RegExp]") {
+      return nativeSplit.call(str, separator, limit);
+    }
+    var output = [],
+      flags = (separator.ignoreCase ? "i" : "") + (separator.multiline ? "m" : "") + (separator.extended ? "x" : "") + // Proposed for ES6
+      (separator.sticky ? "y" : ""),
+      // Firefox 3+
+      lastLastIndex = 0,
+      // Make `global` and avoid `lastIndex` issues by working with a copy
+      separator = new RegExp(separator.source, flags + "g"),
+      separator2, match, lastIndex, lastLength;
+    str += ""; // Type-convert
+    if (!compliantExecNpcg) {
+      // Doesn't need flags gy, but they don't hurt
+      separator2 = new RegExp("^" + separator.source + "$(?!\\s)", flags);
+    }
+    /* Values for `limit`, per the spec:
+     * If undefined: 4294967295 // Math.pow(2, 32) - 1
+     * If 0, Infinity, or NaN: 0
+     * If positive number: limit = Math.floor(limit); if (limit > 4294967295) limit -= 4294967296;
+     * If negative number: 4294967296 - Math.floor(Math.abs(limit))
+     * If other: Type-convert, then use the above rules
+     */
+    limit = limit === undef ? -1 >>> 0 : // Math.pow(2, 32) - 1
+    limit >>> 0; // ToUint32(limit)
+    while (match = separator.exec(str)) {
+      // `separator.lastIndex` is not reliable cross-browser
+      lastIndex = match.index + match[0].length;
+      if (lastIndex > lastLastIndex) {
+        output.push(str.slice(lastLastIndex, match.index));
+        // Fix browsers whose `exec` methods don't consistently return `undefined` for
+        // nonparticipating capturing groups
+        if (!compliantExecNpcg && match.length > 1) {
+          match[0].replace(separator2, function() {
+            for (var i = 1; i < arguments.length - 2; i++) {
+              if (arguments[i] === undef) {
+                match[i] = undef;
+              }
+            }
+          });
+        }
+        if (match.length > 1 && match.index < str.length) {
+          Array.prototype.push.apply(output, match.slice(1));
+        }
+        lastLength = match[0].length;
+        lastLastIndex = lastIndex;
+        if (output.length >= limit) {
+          break;
+        }
+      }
+      if (separator.lastIndex === match.index) {
+        separator.lastIndex++; // Avoid an infinite loop
+      }
+    }
+    if (lastLastIndex === str.length) {
+      if (lastLength || !separator.test("")) {
+        output.push("");
+      }
+    } else {
+      output.push(str.slice(lastLastIndex));
+    }
+    return output.length > limit ? output.slice(0, limit) : output;
+  };
+
+  return self;
+})();
+
+},{}],7:[function(require,module,exports){
+var Value = require('./value')
+var LazyWatcher = require('./lib/lazy-watcher')
+var isSame = require('./lib/is-same')
+var isObservable = require('./is-observable')
+var resolve = require('./resolve')
+var addCollectionMethods = require('./lib/add-collection-methods')
+var forEach = require('./for-each')
+
+module.exports = Array
+
+function Array (defaultValues, opts) {
+  var object = []
+  var sources = []
+  var objectReleases = []
+  var fixedIndexing = opts && opts.fixedIndexing || false
+
+  var releases = []
+  var comparer = opts && opts.comparer || null
+
+  var binder = LazyWatcher(update, listen, unlisten)
+  binder.value = object
+
+  if (opts && opts.idle) binder.idle = true
+  if (opts && opts.nextTick) binder.nextTick = true
+
+  if (defaultValues && defaultValues.length) {
+    forEach(defaultValues, add)
+  }
+
+  var observable = function MutantArray (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  // getLength, get, indexOf, etc
+  addCollectionMethods(observable, sources)
+
+  observable.push = function (item) {
+    var result = null
+    if (arguments.length === 1) {
+      result = add(item)
+    } else {
+      result = []
+      for (var i = 0; i < arguments.length; i++) {
+        result.push(add(arguments[i]))
+      }
+    }
+    binder.broadcast()
+    return result
+  }
+
+  observable.put = function (index, valueOrObs) {
+    valueOrObs = getObsValue(valueOrObs)
+    sources[index] = valueOrObs
+    object[index] = resolve(valueOrObs)
+    if (binder.live) {
+      tryInvoke(objectReleases[index])
+      objectReleases[index] = bind(valueOrObs)
+    }
+    binder.broadcast()
+    return valueOrObs
+  }
+
+  observable.insert = function (valueOrObs, at) {
+    valueOrObs = getObsValue(valueOrObs)
+    sources.splice(at, 0, valueOrObs)
+    if (binder.live) objectReleases.splice(at, 0, bind(valueOrObs))
+    object.splice(at, 0, resolve(valueOrObs))
+    binder.broadcast()
+    return valueOrObs
+  }
+
+  observable.pop = function () {
+    var result = sources.pop()
+    if (binder.live) tryInvoke(objectReleases.pop())
+    object.pop()
+    binder.broadcast()
+    return result
+  }
+
+  observable.shift = function () {
+    var result = sources.shift()
+    if (binder.live) tryInvoke(objectReleases.shift())
+    object.shift()
+    binder.broadcast()
+    return result
+  }
+
+  observable.clear = function () {
+    objectReleases.forEach(tryInvoke)
+    sources.length = 0
+    objectReleases.length = 0
+    object.length = 0
+    binder.broadcast()
+  }
+
+  observable.delete = function (valueOrObs) {
+    observable.deleteAt(sources.indexOf(valueOrObs))
+  }
+
+  observable.deleteAt = function (index) {
+    if (index >= 0 && index < sources.length) {
+      sources.splice(index, 1)
+      if (binder.live) objectReleases.splice(index, 1).forEach(tryInvoke)
+      object.splice(index, 1)
+      binder.broadcast()
+    }
+  }
+
+  observable.transaction = function (cb) {
+    binder.transaction(observable, cb)
+  }
+
+  observable.set = function (values) {
+    var changed = false
+    if (fixedIndexing) {
+      var length = (values && values.length) || 0
+      for (var i = 0; i < length; i++) {
+        if (isObservable(values[i])) {
+          if (values[i] !== sources[i]) {
+            tryInvoke(objectReleases[i])
+            sources[i] = values[i]
+            object[i] = resolve(sources[i])
+            changed = true
+            if (binder.live) {
+              objectReleases[i] = bind(sources[i])
+            }
+          }
+        } else if (sources[i] && sources[i]._type === 'MutantArrayValue') {
+          if (!isSame(sources[i](), values[i], comparer)) {
+            sources[i].set(values[i])
+            object[i] = resolve(sources[i])
+            changed = true
+          }
+        } else {
+          tryInvoke(objectReleases[i])
+          sources[i] = getObsValue(values[i])
+          object[i] = resolve(sources[i])
+          changed = true
+          if (binder.live) {
+            objectReleases[i] = bind(sources[i])
+          }
+        }
+      }
+      for (var index = length; index < sources.length; index++) {
+        tryInvoke(objectReleases[index])
+        changed = true
+      }
+
+      if (changed) {
+        objectReleases.length = length
+        sources.length = length
+        object.length = length
+        binder.broadcast()
+      }
+    } else {
+      unlisten()
+      sources.length = 0
+      objectReleases.length = 0
+      object.length = 0
+      forEach(values, add)
+      if (binder.live) {
+        listen()
+        binder.broadcast()
+      }
+    }
+  }
+
+  return observable
+
+  // scoped
+
+  function getObsValue (valueOrObs) {
+    if (fixedIndexing && !isObservable(valueOrObs)) {
+      valueOrObs = Value(valueOrObs)
+      valueOrObs._type = 'MutantArrayValue'
+    }
+    return valueOrObs
+  }
+
+  function add (valueOrObs) {
+    valueOrObs = getObsValue(valueOrObs)
+    sources.push(valueOrObs)
+    object.push(resolve(valueOrObs))
+    if (binder.live) {
+      objectReleases.push(bind(valueOrObs))
+    }
+    return valueOrObs
+  }
+
+  function bind (valueOrObs) {
+    return typeof valueOrObs === 'function' ? valueOrObs(binder.onUpdate) : null
+  }
+
+  function listen () {
+    sources.forEach(function (obs, i) {
+      objectReleases[i] = bind(obs)
+    })
+
+    if (opts && opts.onListen) {
+      var release = opts.onListen()
+      if (typeof release === 'function') {
+        releases.push(release)
+      }
+    }
+  }
+
+  function unlisten () {
+    objectReleases.forEach(tryInvoke)
+    objectReleases.length = 0
+
+    while (releases.length) {
+      tryInvoke(releases.pop())
+    }
+
+    if (opts && opts.onUnlisten) {
+      opts.onUnlisten()
+    }
+  }
+
+  function update () {
+    var changed = false
+    sources.forEach(function (source, i) {
+      var newValue = resolve(source)
+      if (!isSame(newValue, object[i], comparer)) {
+        object[i] = newValue
+        changed = true
+      }
+    })
+    return changed
+  }
+}
+
+function tryInvoke (func) {
+  if (typeof func === 'function') {
+    func()
+  }
+}
+
+},{"./for-each":13,"./is-observable":17,"./lib/add-collection-methods":19,"./lib/is-same":22,"./lib/lazy-watcher":24,"./resolve":38,"./value":44}],8:[function(require,module,exports){
+(function (setImmediate){
+/* A lazy binding take on computed */
+// - doesn't start watching observables until itself is watched, and then releases if unwatched
+// - avoids memory/watcher leakage
+// - attaches to inner observables if these are returned from value
+// - doesn't broadcast if value is same as last value (and is `value type` or observable - can't make assuptions about reference types)
+// - doesn't broadcast if value is computed.NO_CHANGE
+
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+var isSame = require('./lib/is-same')
+var onceIdle = require('./once-idle')
+
+module.exports = computed
+
+computed.NO_CHANGE = {}
+computed.extended = extendedComputed
+
+function computed (observables, lambda, opts) {
+  // opts: nextTick, comparer, context, passthru
+  var instance = new ProtoComputed(observables, lambda, opts)
+  return instance.MutantComputed.bind(instance)
+}
+
+// optimise memory usage
+function ProtoComputed (observables, lambda, opts) {
+  if (!Array.isArray(observables)) {
+    observables = [observables]
+  }
+  this.values = []
+  this.releases = []
+  this.computedValue = null
+  this.outputValue = null
+  this.inner = null
+  this.updating = false
+  this.live = false
+  this.initialized = false
+  this.listeners = []
+  this.observables = observables
+  this.lambda = lambda
+  this.opts = opts
+  this.comparer = opts && opts.comparer || null
+
+  // when true, don't expand nested observables, just treat as values
+  this.passthru = opts && opts.passthru || null
+
+  this.context = opts && opts.context || {}
+  this.boundOnUpdate = this.onUpdate.bind(this)
+  this.boundUpdateNow = this.updateNow.bind(this)
+  this.boundUnlisten = this.unlisten.bind(this)
+}
+
+ProtoComputed.prototype = {
+  MutantComputed: function (listener) {
+    if (!listener) {
+      return this.getValue()
+    }
+
+    if (typeof listener !== 'function') {
+      throw new Error('Listeners must be functions.')
+    }
+
+    this.listeners.push(listener)
+    this.listen()
+
+    return this.removeListener.bind(this, listener)
+  },
+  removeListener: function (listener) {
+    for (var i = 0, len = this.listeners.length; i < len; i++) {
+      if (this.listeners[i] === listener) {
+        this.listeners.splice(i, 1)
+        break
+      }
+    }
+    if (!this.listeners.length) {
+      this.unlisten()
+    }
+  },
+  listen: function () {
+    if (!this.live) {
+      for (var i = 0, len = this.observables.length; i < len; i++) {
+        if (isObservable(this.observables[i])) {
+          this.releases.push(this.observables[i](this.boundOnUpdate))
+        }
+      }
+      if (this.inner) {
+        this.releaseInner = this.inner(this.onInnerUpdate.bind(this, this.inner))
+      }
+
+      this.live = true
+
+      if (!this.update() && this.inner) {
+        // no change, but make sure that inner value is up to date
+        this.onInnerUpdate(this.inner, resolve(this.inner))
+      }
+
+      if (this.opts && this.opts.onListen) {
+        var release = this.opts.onListen()
+        if (typeof release === 'function') {
+          this.releases.push(release)
+        }
+      }
+    }
+  },
+  unlisten: function () {
+    if (this.live && !this.listeners.length) {
+      this.live = false
+
+      if (this.releaseInner) {
+        this.releaseInner()
+        this.releaseInner = null
+      }
+
+      while (this.releases.length) {
+        this.releases.pop()()
+      }
+
+      if (this.opts && this.opts.onUnlisten) {
+        this.opts.onUnlisten()
+      }
+    }
+  },
+  update: function () {
+    var changed = false
+    for (var i = 0, len = this.observables.length; i < len; i++) {
+      var newValue = resolve(this.observables[i])
+      if (!isSame(newValue, this.values[i], this.comparer)) {
+        changed = true
+        this.values[i] = newValue
+      }
+    }
+
+    if (changed || !this.initialized) {
+      this.initialized = true
+      var newComputedValue = this.lambda.apply(this.context, this.values)
+
+      if (newComputedValue === computed.NO_CHANGE) {
+        return false
+      }
+
+      if (!isSame(newComputedValue, this.computedValue, this.comparer)) {
+        if (this.releaseInner) {
+          this.releaseInner()
+          this.inner = this.releaseInner = null
+        }
+
+        this.computedValue = newComputedValue
+
+        if (isObservable(newComputedValue) && !this.passthru) {
+          // handle returning observable from computed
+          this.outputValue = newComputedValue()
+          this.inner = newComputedValue
+          if (this.live) {
+            this.releaseInner = this.inner(this.onInnerUpdate.bind(this, this.inner))
+          }
+        } else {
+          this.outputValue = this.computedValue
+        }
+        return true
+      }
+    }
+    return false
+  },
+  onUpdate: function () {
+    if (this.opts && this.opts.idle) {
+      if (!this.updating) {
+        this.updating = true
+        onceIdle(this.boundUpdateNow)
+      }
+    } else if (this.opts && this.opts.nextTick) {
+      if (!this.updating) {
+        this.updating = true
+        setImmediate(this.boundUpdateNow)
+      }
+    } else {
+      this.updateNow()
+    }
+  },
+  onInnerUpdate: function (obs, value) {
+    if (obs === this.inner) {
+      if (!isSame(value, this.outputValue, this.comparer)) {
+        this.outputValue = value
+        this.broadcast()
+      }
+    }
+  },
+  updateNow: function () {
+    this.updating = false
+    if (this.update()) {
+      this.broadcast()
+    }
+  },
+  getValue: function () {
+    if (!this.updating && !this.live) {
+      // temporarily become live to watch for changes until next cycle to stop
+      // potential double refresh and handle weird race conditions
+      this.listen() // triggers update
+      setImmediate(this.boundUnlisten) // only runs if no listeners have been added
+    } else if (this.updating) {
+      // short circuit nextTick if this value is read directly
+      this.updateNow()
+    }
+    return this.outputValue
+  },
+  broadcast: function () {
+    // cache listeners in case modified during broadcast
+    var listeners = this.listeners.slice(0)
+    for (var i = 0, len = listeners.length; i < len; i++) {
+      listeners[i](this.outputValue)
+    }
+  }
+}
+
+function extendedComputed (observables, update) {
+  var live = false
+
+  var instance = computed(observables, function () {
+    return update()
+  }, {
+    onListen: function () { live = true },
+    onUnlisten: function () { live = false }
+  })
+
+  instance.checkUpdated = function () {
+    if (!live) {
+      update()
+    }
+  }
+
+  return instance
+}
+
+}).call(this,require("timers").setImmediate)
+},{"./is-observable":17,"./lib/is-same":22,"./once-idle":33,"./resolve":38,"timers":50}],9:[function(require,module,exports){
+var resolve = require('./resolve')
+var addCollectionMethods = require('./lib/add-collection-methods')
+var computed = require('./computed')
+var forEach = require('./for-each')
+
+module.exports = function Concat (observables) {
+  var values = []
+  var rawValues = []
+
+  var instance = computed.extended(observables, function () {
+    var index = 0
+
+    forEach(observables, function (collection) {
+      forEach(collection, function (item) {
+        var value = resolve(item)
+        values[index] = value
+        rawValues[index] = item
+        index += 1
+      })
+    })
+
+    values.length = index
+    rawValues.length = index
+    return values
+  })
+
+  var result = function MutantConcat (listener) {
+    return instance(listener)
+  }
+
+  // getLength, get, indexOf, etc
+  addCollectionMethods(result, rawValues, instance.checkUpdated)
+
+  return result
+}
+
+},{"./computed":8,"./for-each":13,"./lib/add-collection-methods":19,"./resolve":38}],10:[function(require,module,exports){
+var addCollectionMethods = require('./lib/add-collection-methods')
+var computed = require('./computed')
+var KeyValue = require('./lib/key-value')
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+var MutantMap = require('./map')
+
+module.exports = DictToCollection
+
+function DictToCollection (obs) {
+  var value = []
+  var raw = []
+  var keys = []
+
+  var instance = computed.extended(obs, function () {
+    var newKeys = getKeys(obs)
+    var remove = keys.filter((key) => !newKeys.includes(key))
+    var add = newKeys.filter((key) => !keys.includes(key))
+    var update = keys.filter((key) => keys.includes(key))
+
+    remove.forEach((key) => {
+      var index = keys.indexOf(key)
+      if (~index) {
+        keys.splice(index, 1)
+        raw.splice(index, 1)
+        value.splice(index, 1)
+      }
+    })
+
+    add.forEach((key) => {
+      var item = getValue(obs, key)
+      var rawValue = KeyValue(key, item)
+      keys.push(key)
+      raw.push(rawValue)
+      value.push(resolve(rawValue))
+    })
+
+    update.forEach((key) => {
+      var index = keys.indexOf(key)
+      if (~index) {
+        var item = getValue(obs, key)
+        if (raw[index].isBound || isObservable(item)) {
+          if (raw[index].value !== item) {
+            raw[index] = KeyValue(key, item)
+          }
+        } else {
+          raw[index].value.set(item)
+        }
+        value[index] = resolve(raw[index])
+      }
+    })
+
+    return value
+  })
+
+  var result = function MutantDictToCollection (listener) {
+    return instance(listener)
+  }
+
+  // getLength, get, indexOf, etc
+  addCollectionMethods(result, raw, instance.checkUpdated)
+
+  return result
+}
+
+module.exports.values = function (obs) {
+  return MutantMap(DictToCollection(obs), function (item) {
+    return item.value
+  })
+}
+
+function getKeys (value) {
+  if (isObservable(value) && value.keys) {
+    return resolve(value.keys)
+  } else {
+    return Object.keys(resolve(value))
+  }
+}
+
+function getValue (obj, key) {
+  if (isObservable(obj) && obj.get) {
+    return obj.get(key)
+  } else {
+    var resolved = resolve(obj)
+    if (resolved) {
+      return resolved[key]
+    }
+  }
+}
+
+},{"./computed":8,"./is-observable":17,"./lib/add-collection-methods":19,"./lib/key-value":23,"./map":29,"./resolve":38}],11:[function(require,module,exports){
+var Value = require('./value')
+var LazyWatcher = require('./lib/lazy-watcher')
+var isSame = require('./lib/is-same')
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+var forEachPair = require('./for-each-pair')
+var addLookupMethods = require('./lib/add-lookup-methods')
+
+module.exports = Dict
+
+function Dict (defaultValues, opts) {
+  var object = Object.create({})
+  var sources = {}
+  var objectReleases = {}
+  var fixedIndexing = opts && opts.fixedIndexing || false
+
+  var releases = []
+  var comparer = opts && opts.comparer || null
+
+  var binder = LazyWatcher(update, listen, unlisten)
+  binder.value = object
+
+  if (opts && opts.nextTick) binder.nextTick = true
+  if (opts && opts.idle) binder.idle = true
+
+  if (defaultValues) {
+    forEachPair(defaultValues, put)
+  }
+
+  var observable = function MutantDictionary (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  addLookupMethods(observable, sources)
+
+  observable.put = function (key, valueOrObs) {
+    valueOrObs = getObsValue(valueOrObs)
+    put(key, valueOrObs)
+    binder.broadcast()
+    return valueOrObs
+  }
+
+  observable.clear = function () {
+    Object.keys(sources).forEach(function (key) {
+      tryInvoke(objectReleases[key])
+      delete sources[key]
+      delete objectReleases[key]
+      delete object[key]
+    })
+    binder.broadcast()
+  }
+
+  observable.delete = function (key) {
+    tryInvoke(objectReleases[key])
+    delete sources[key]
+    delete objectReleases[key]
+    delete object[key]
+    binder.broadcast()
+  }
+
+  observable.transaction = function (cb) {
+    binder.transaction(observable, cb)
+  }
+
+  observable.set = function (values) {
+    if (fixedIndexing) {
+      var keys = []
+
+      forEachPair(values, function (key, value) {
+        keys.push(key)
+        if (sources[key]) {
+          sources[key].set(value)
+        } else {
+          put(key, getObsValue(value))
+        }
+      })
+
+      Object.keys(sources).forEach(function (key) {
+        if (!keys.includes(key)) {
+          tryInvoke(objectReleases[key])
+          delete sources[key]
+          delete objectReleases[key]
+          delete object[key]
+        }
+      })
+    } else {
+      Object.keys(sources).forEach(function (key) {
+        tryInvoke(objectReleases[key])
+        delete sources[key]
+        delete objectReleases[key]
+        delete object[key]
+      })
+
+      forEachPair(values, put)
+      binder.broadcast()
+    }
+  }
+
+  return observable
+
+  // scoped
+
+  function getObsValue (valueOrObs) {
+    if (fixedIndexing && !isObservable(valueOrObs)) {
+      valueOrObs = Value(valueOrObs)
+    }
+    return valueOrObs
+  }
+
+  function put (key, valueOrObs) {
+    tryInvoke(objectReleases[key])
+    sources[key] = valueOrObs
+    if (binder.live) {
+      objectReleases[key] = bind(key, valueOrObs)
+    }
+    object[key] = resolve(valueOrObs)
+  }
+
+  function bind (key, valueOrObs) {
+    return typeof valueOrObs === 'function' ? valueOrObs(updateKey.bind(this, key)) : null
+  }
+
+  function updateKey (key, value) {
+    object[key] = value
+    binder.broadcast()
+  }
+
+  function listen () {
+    Object.keys(sources).forEach(function (key) {
+      objectReleases[key] = bind(key, sources[key])
+    })
+
+    if (opts && opts.onListen) {
+      var release = opts.onListen()
+      if (typeof release === 'function') {
+        releases.push(release)
+      }
+    }
+  }
+
+  function unlisten () {
+    Object.keys(sources).forEach(function (key) {
+      tryInvoke(objectReleases[key])
+      delete objectReleases[key]
+    })
+
+    while (releases.length) {
+      tryInvoke(releases.pop())
+    }
+
+    if (opts && opts.onUnlisten) {
+      opts.onUnlisten()
+    }
+  }
+
+  function update () {
+    var changed = false
+    Object.keys(sources).forEach(function (key) {
+      var newValue = resolve(sources[key])
+      if (!isSame(newValue, object[key], comparer)) {
+        object[key] = newValue
+        changed = true
+      }
+    })
+    return changed
+  }
+}
+
+function tryInvoke (func) {
+  if (typeof func === 'function') {
+    func()
+  }
+}
+
+},{"./for-each-pair":12,"./is-observable":17,"./lib/add-lookup-methods":20,"./lib/is-same":22,"./lib/lazy-watcher":24,"./resolve":38,"./value":44}],12:[function(require,module,exports){
+var isObservable = require('./is-observable')
+var resolve = require('./resolve')
+
+module.exports = function forEachPair (source, fn) {
+  if (source) {
+    if (isObservable(source) && source.keys && source.get) {
+      resolve(source.keys).forEach(function (key) {
+        fn(key, source.get(key))
+      })
+    } else {
+      var values = resolve(source)
+      if (values) {
+        Object.keys(values).forEach(function (key) {
+          fn(key, values[key])
+        })
+      }
+    }
+  }
+}
+
+},{"./is-observable":17,"./resolve":38}],13:[function(require,module,exports){
+var resolve = require('./resolve')
+
+module.exports = function forEach (sources, fn) {
+  if (sources && !sources.forEach) {
+    sources = resolve(sources)
+  }
+
+  if (sources && sources.forEach) {
+    sources.forEach(fn)
+  }
+}
+
+},{"./resolve":38}],14:[function(require,module,exports){
+(function (global,setImmediate){
+var applyProperties = require('./lib/apply-properties')
+var isObservable = require('./is-observable')
+var parseTag = require('./lib/parse-tag')
+var walk = require('./lib/walk')
+var watch = require('./watch')
+var caches = new global.WeakMap()
+var bindQueue = []
+var currentlyBinding = false
+var watcher = null
+var releaseNextTick = require('./lib/release-next-tick')
+
+module.exports = function (tag, attributes, children) {
+  return Element(global.document, null, tag, attributes, children)
+}
+
+module.exports.forDocument = function (document, namespace) {
+  return Element.bind(this, document, namespace)
+}
+
+function Element (document, namespace, tagName, properties, children) {
+  if (!children && (Array.isArray(properties) || isText(properties) || isNode(properties) || isObservable(properties))) {
+    children = properties
+    properties = null
+  }
+
+  checkWatcher(document)
+  properties = properties || {}
+
+  var tag = parseTag(tagName, properties, namespace)
+  var node = namespace
+    ? document.createElementNS(namespace, tag.tagName)
+    : document.createElement(tag.tagName)
+
+  if (tag.id) {
+    node.id = tag.id
+  }
+
+  if (tag.classes && tag.classes.length) {
+    node.className = tag.classes.join(' ')
+  }
+
+  var data = {
+    targets: new Map(),
+    bindings: []
+  }
+
+  caches.set(node, data)
+  applyProperties(node, properties, data)
+  if (children != null) {
+    appendChild(document, node, data, children)
+  }
+
+  maybeBind(document, node)
+  return node
+}
+
+function appendChild (document, target, data, node) {
+  if (Array.isArray(node)) {
+    node.forEach(function (child) {
+      appendChild(document, target, data, child)
+    })
+  } else if (isObservable(node)) {
+    var nodes = getNodes(document, resolve(node))
+    nodes.forEach(append, { target: target, document: document })
+    data.targets.set(node, nodes)
+    data.bindings.push(new Binding(document, node, data))
+  } else {
+    node = getNode(document, node)
+    target.appendChild(node)
+    if (getRootNode(node) === document) {
+      walk(node, rebind)
+    }
+  }
+}
+
+function append (child) {
+  this.target.appendChild(child)
+  if (getRootNode(child) === this.document) {
+    walk(child, rebind)
+  }
+}
+
+function maybeBind (document, node) {
+  bindQueue.push([document, node])
+  if (!currentlyBinding) {
+    currentlyBinding = true
+    setImmediate(flushBindQueue)
+  }
+}
+
+function flushBindQueue () {
+  currentlyBinding = false
+  while (bindQueue.length) {
+    var item = bindQueue.shift()
+    var document = item[0]
+    var node = item[1]
+    if (getRootNode(node) === document) {
+      walk(node, rebind)
+    }
+  }
+}
+
+function checkWatcher (document) {
+  if (!watcher && global.MutationObserver) {
+    watcher = new global.MutationObserver(onMutate)
+    watcher.observe(document, {subtree: true, childList: true})
+  }
+}
+
+function onMutate (changes) {
+  changes.forEach(handleChange)
+}
+
+function getRootNode (el) {
+  var element = el
+  while (element.parentNode) {
+    element = element.parentNode
+  }
+  return element
+}
+
+function handleChange (change) {
+  for (var i = 0; i < change.addedNodes.length; i++) {
+    // if parent is a mutant element, then safe to assume it has already been bound
+    var node = change.addedNodes[i]
+    if (!caches.has(node.parentNode) || !isBound(node)) {
+      walk(node, rebind)
+    }
+  }
+  for (var i = 0; i < change.removedNodes.length; i++) {
+    var node = change.removedNodes[i]
+    walk(node, unbind)
+  }
+}
+
+function indexOf (target, item) {
+  return Array.prototype.indexOf.call(target, item)
+}
+
+function replace (oldNodes, newNodes) {
+  var parent = oldNodes[oldNodes.length - 1].parentNode
+  var nodes = parent.childNodes
+  var startIndex = indexOf(nodes, oldNodes[0])
+
+  // avoid reinserting nodes that are already in correct position!
+  for (var i = 0; i < newNodes.length; i++) {
+    if (nodes[i + startIndex] === newNodes[i]) {
+      continue
+    } else if (nodes[i + startIndex + 1] === newNodes[i]) {
+      parent.removeChild(nodes[i + startIndex])
+      continue
+    } else if (nodes[i + startIndex] === newNodes[i + 1] && newNodes[i + 1]) {
+      parent.insertBefore(newNodes[i], nodes[i + startIndex])
+    } else if (nodes[i + startIndex]) {
+      parent.insertBefore(newNodes[i], nodes[i + startIndex])
+    } else {
+      parent.appendChild(newNodes[i])
+    }
+    walk(newNodes[i], rebind)
+  }
+
+  oldNodes.filter(function (node) {
+    return !~newNodes.indexOf(node)
+  }).forEach(function (node) {
+    if (node.parentNode) {
+      parent.removeChild(node)
+    }
+    walk(node, unbind)
+  })
+}
+
+function isText (value) {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+function isNode (value) {
+  // for some reason, img elements are not instances of Node
+  return value instanceof global.Node || (global.HTMLElement && value instanceof global.HTMLElement)
+}
+
+function getNode (document, nodeOrText) {
+  if (nodeOrText == null) {
+    return document.createTextNode('')
+  } else if (isText(nodeOrText)) {
+    return document.createTextNode(nodeOrText.toString())
+  } else {
+    return nodeOrText
+  }
+}
+
+function getNodes (document, nodeOrNodes) {
+  if (Array.isArray(nodeOrNodes)) {
+    if (nodeOrNodes.length) {
+      var result = []
+      for (var i = 0; i < nodeOrNodes.length; i++) {
+        var item = nodeOrNodes[i]
+        if (Array.isArray(item)) {
+          getNodes(document, item).forEach(push, result)
+        } else {
+          result.push(getNode(document, item))
+        }
+      }
+      return result.map(getNode.bind(this, document))
+    } else {
+      return [getNode(document, null)]
+    }
+  } else {
+    return [getNode(document, nodeOrNodes)]
+  }
+}
+
+function rebind (node) {
+  if (node.nodeType === 1) {
+    var data = caches.get(node)
+    if (data) {
+      data.bindings.forEach(invokeBind)
+    }
+  }
+}
+
+function unbind (node) {
+  if (node.nodeType === 1) {
+    var data = caches.get(node)
+    if (data) {
+      data.bindings.forEach(invokeUnbind)
+    }
+  }
+}
+
+function isBound (node) {
+  if (node.nodeType === 1) {
+    var data = caches.get(node)
+    if (data) {
+      return data.bindings.some(getBound)
+    }
+  }
+}
+
+function getBound (binding) {
+  return binding.bound
+}
+
+function invokeBind (binding) {
+  binding.bind()
+}
+
+function invokeUnbind (binding) {
+  binding.unbind()
+}
+
+function push (item) {
+  this.push(item)
+}
+
+function resolve (source) {
+  return typeof source === 'function' ? source() : source
+}
+
+function Binding (document, obs, data) {
+  this.document = document
+  this.obs = obs
+  this.data = data
+  this.bound = false
+
+  this.update = function (value) {
+    var oldNodes = data.targets.get(obs)
+    var newNodes = getNodes(document, value)
+    if (oldNodes) {
+      replace(oldNodes, newNodes)
+      data.targets.set(obs, newNodes)
+    }
+  }
+
+  // listen immediately, but if not bound before next tick, release
+  this.release = obs(this.update)
+  releaseNextTick(this)
+}
+
+Binding.prototype = {
+  bind: function () {
+    if (!this.bound) {
+      if (!this.release) {
+        this.release = watch(this.obs, this.update)
+      }
+      this.bound = true
+    }
+  },
+  unbind: function () {
+    if (this.bound) {
+      this.bound = false
+      releaseNextTick(this)
+    }
+  }
+}
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("timers").setImmediate)
+},{"./is-observable":17,"./lib/apply-properties":21,"./lib/parse-tag":25,"./lib/release-next-tick":26,"./lib/walk":27,"./watch":47,"timers":50}],15:[function(require,module,exports){
+var Proxy = require('./proxy')
+var onceIdle = require('./once-idle')
+
+module.exports = function IdleProxy (fn) {
+  var obs = Proxy()
+  onceIdle(function () {
+    obs.set(fn())
+  })
+  return obs
+}
+
+},{"./once-idle":33,"./proxy":37}],16:[function(require,module,exports){
+module.exports = {
+// Types
+  'Array': require('./array'),
+  'Dict': require('./dict'),
+  'Set': require('./set'),
+  'Struct': require('./struct'),
+  'Value': require('./value'),
+  'MappedArray': require('./mapped-array'),
+  'MappedDict': require('./mapped-dict'),
+// ProxyTypes
+  'ProxyCollection': require('./proxy-collection'),
+  'ProxyDict': require('./proxy-dict'),
+  'Proxy': require('./proxy'),
+// Transforms
+  'computed': require('./computed'),
+  'concat': require('./concat'),
+  'dictToCollection': require('./dict-to-collection'),
+  'idleProxy': require('./idle-proxy'),
+  'keys': require('./keys'),
+  'lookup': require('./lookup'),
+  'map': require('./map'),
+  'merge': require('./merge'),
+  'throttle': require('./throttle'),
+  'when': require('./when'),
+// Sinks
+  'h': require('./html-element'),
+  'HtmlElement': require('./html-element'),
+  'svg': require('./svg-element'),
+  'SvgElement': require('./svg-element'),
+  'watchAll': require('./watch-all'),
+  'watch': require('./watch'),
+  'watchThrottle': require('./watch-throttle'),
+// Helpers
+  'forEach': require('./for-each'),
+  'forEachPair': require('./for-each-pair'),
+  'isObservable': require('./is-observable'),
+  'onceIdle': require('./once-idle'),
+  'onceTrue': require('./once-true'),
+  'resolve': require('./resolve'),
+  'send': require('./send')
+}
+
+},{"./array":7,"./computed":8,"./concat":9,"./dict":11,"./dict-to-collection":10,"./for-each":13,"./for-each-pair":12,"./html-element":14,"./idle-proxy":15,"./is-observable":17,"./keys":18,"./lookup":28,"./map":29,"./mapped-array":30,"./mapped-dict":31,"./merge":32,"./once-idle":33,"./once-true":34,"./proxy":37,"./proxy-collection":35,"./proxy-dict":36,"./resolve":38,"./send":39,"./set":40,"./struct":41,"./svg-element":42,"./throttle":43,"./value":44,"./watch":47,"./watch-all":45,"./watch-throttle":46,"./when":48}],17:[function(require,module,exports){
+module.exports = isObservable
+
+function isObservable (obj) {
+  return typeof obj === 'function'
+}
+
+},{}],18:[function(require,module,exports){
+var computed = require('./computed')
+
+module.exports = Keys
+
+function Keys (collection) {
+  var result = []
+  var initialized = false
+  return computed(collection, function (value) {
+    var keys = Object.keys(value)
+    var changed = false
+    for (var i = 0; i < keys.length; i++) {
+      if (result[i] !== keys[i]) {
+        result[i] = keys[i]
+        changed = true
+      }
+    }
+
+    if (result.length !== keys.length) {
+      changed = true
+      result.length = keys.length
+    }
+
+    if (changed || !initialized) {
+      initialized = true
+      return result
+    } else {
+      return computed.NO_CHANGE
+    }
+  })
+}
+
+},{"./computed":8}],19:[function(require,module,exports){
+module.exports = function (target, list, checkUpdated) {
+  target.get = function (index) {
+    checkUpdated && checkUpdated()
+    return list[index]
+  }
+
+  target.getLength = function (index) {
+    checkUpdated && checkUpdated()
+    return list.length
+  }
+
+  target.includes = function (valueOrObs) {
+    checkUpdated && checkUpdated()
+    return !!~list.indexOf(valueOrObs)
+  }
+
+  target.indexOf = function (valueOrObs) {
+    checkUpdated && checkUpdated()
+    return list.indexOf(valueOrObs)
+  }
+
+  target.forEach = function (fn, context) {
+    checkUpdated && checkUpdated()
+    list.slice().forEach(fn, context)
+  }
+
+  target.find = function (fn) {
+    checkUpdated && checkUpdated()
+    return list.find(fn)
+  }
+}
+
+},{}],20:[function(require,module,exports){
+module.exports = function (target, lookup, checkUpdated) {
+  target.keys = function () {
+    checkUpdated && checkUpdated()
+    return Object.keys(lookup)
+  }
+
+  target.get = function (key) {
+    checkUpdated && checkUpdated()
+    return lookup[key]
+  }
+
+  target.has = function (key) {
+    checkUpdated && checkUpdated()
+    return key in lookup
+  }
+}
+
+},{}],21:[function(require,module,exports){
+var isObservable = require('../is-observable')
+var Set = require('../set')
+var watch = require('../watch')
+
+module.exports = applyProperties
+
+function applyProperties (target, properties, data) {
+  var classList = Set()
+  if (target.classList && target.classList.value) {
+    classList.add(target.classList.value)
+  }
+
+  for (var key in properties) {
+    var valueOrObs = properties[key]
+
+    if (key === 'style') {
+      // TODO: handle observable at root for style objects
+      var value = resolve(valueOrObs)
+      for (var k in value) {
+        var styleObs = isObservable(value[k]) ? value[k] : null
+        if (styleObs) {
+          data.bindings.push(new Binding(bindStyle, target, styleObs, k))
+        } else {
+          target.style.setProperty(k, value[k])
+        }
+      }
+    } else if (key === 'hooks') {
+      var value = resolve(valueOrObs)
+      if (Array.isArray(value)) {
+        value.forEach(function (v) {
+          data.bindings.push(new HookBinding(v, target))
+        })
+      }
+    } else if (key === 'attributes') {
+      var value = resolve(valueOrObs)
+      for (var k in value) {
+        var attrObs = isObservable(value[k]) ? value[k] : null
+        if (attrObs) {
+          data.bindings.push(new Binding(bindAttr, target, attrObs, k))
+        } else {
+          target.setAttribute(k, value[k])
+        }
+      }
+    } else if (key === 'events') {
+      for (var name in valueOrObs) {
+        target.addEventListener(name, valueOrObs[name], false)
+      }
+    } else if (key.slice(0, 3) === 'ev-') {
+      target.addEventListener(key.slice(3), valueOrObs, false)
+    } else if (key === 'className' || key === 'classList') {
+      if (Array.isArray(valueOrObs)) {
+        valueOrObs.forEach(function (v) {
+          classList.add(v)
+        })
+      } else {
+        classList.add(valueOrObs)
+      }
+    } else {
+      target[key] = resolve(valueOrObs)
+      var obs = isObservable(valueOrObs) ? valueOrObs : null
+      if (obs) {
+        data.bindings.push(new Binding(bind, target, obs, key))
+      }
+    }
+  }
+
+  if (containsObservables(classList)) {
+    data.bindings.push(new Binding(bindClassList, target.classList, classList, 'value'))
+  } else {
+    // OPTIMISATION: no need to create a binding if the list is never going to change
+    target.classList.value = classList().join(' ')
+  }
+}
+
+function containsObservables (obs) {
+  for (var i = 0, len = obs.getLength(); i < len; i++) {
+    if (isObservable(obs.get(i))) {
+      return true
+    }
+  }
+}
+
+function bindClassList (target, obs, key) {
+  return watch(obs, function boundClassList (value) {
+    value = [].concat.apply([], value).filter(present).join(' ')
+    if (value || target[key]) {
+      target[key] = value
+    }
+  })
+}
+
+function bindStyle (target, styleObs, key) {
+  return watch(styleObs, function boundStyle (value) {
+    target.style.setProperty(key, value)
+  })
+}
+
+function bindAttr (target, attrObs, key) {
+  return watch(attrObs, function boundAttr (value) {
+    if (value == null) {
+      target.removeAttribute(key)
+    } else {
+      target.setAttribute(key, value)
+    }
+  })
+}
+
+function bind (target, obs, key) {
+  return watch(obs, function bound (toValue) {
+    var fromValue = target[key]
+    if (fromValue !== toValue) {
+      target[key] = toValue
+    }
+  })
+}
+
+function present (val) {
+  return val != null
+}
+
+function resolve (source) {
+  return typeof source === 'function' ? source() : source
+}
+
+function Binding (fn, element, source, key) {
+  this.element = element
+  this.source = source
+  this.key = key
+  this.fn = fn
+  this.bound = false
+}
+
+Binding.prototype = {
+  bind: function () {
+    if (!this.bound) {
+      this._release = this.fn(this.element, this.source, this.key)
+      this.bound = true
+    }
+  },
+  unbind: function () {
+    if (this.bound) {
+      this._release()
+      this._release = null
+      this.bound = false
+    }
+  }
+}
+
+function HookBinding (fn, element) {
+  this.element = element
+  this.fn = fn
+  this.bound = false
+}
+
+HookBinding.prototype = {
+  bind: function () {
+    if (!this.bound) {
+      this._release = this.fn(this.element)
+      this.bound = true
+    }
+  },
+  unbind: function () {
+    if (this.bound && typeof this._release === 'function') {
+      this._release()
+      this._release = null
+      this.bound = false
+    }
+  }
+}
+
+},{"../is-observable":17,"../set":40,"../watch":47}],22:[function(require,module,exports){
+module.exports = function isSame (a, b, compare) {
+  if (compare && compare(a, b)) {
+    return true
+  } else if (typeof a !== typeof b || (typeof a === 'object' && a !== null)) {
+    return false
+  } else {
+    return a === b
+  }
+}
+
+},{}],23:[function(require,module,exports){
+var Struct = require('../struct')
+var isObservable = require('../is-observable')
+
+module.exports = function MutantKeyValue (key, value) {
+  var result = Struct({key: key, value: value})
+  result._type = 'MutantKeyValue'
+  result.isBound = isObservable(key) || isObservable(value)
+  return result
+}
+
+},{"../is-observable":17,"../struct":41}],24:[function(require,module,exports){
+(function (setImmediate){
+var onceIdle = require('../once-idle')
+
+module.exports = function (update, onBind, onUnbind) {
+  var lazy = false
+  var context = this
+  var updating = false
+
+  var obj = {
+    live: false,
+    nextTick: false,
+    idle: false,
+    suspended: false,
+    update: update,
+    value: null,
+    listeners: [],
+
+    broadcast: function () {
+      if (obj.nextTick) {
+        if (!updating) {
+          updating = true
+          setImmediate(broadcast)
+        }
+      } else {
+        broadcast()
+      }
+    },
+
+    transaction: function (value, cb) {
+      var originalValue = obj.suspended
+      obj.suspended = true
+      cb(value)
+      obj.suspended = originalValue
+      obj.broadcast()
+    },
+
+    onUpdate: function () {
+      if (obj.idle) {
+        if (!updating) {
+          updating = true
+          onceIdle(obj.updateAndBroadcast)
+        }
+      } else if (obj.nextTick) {
+        if (!updating) {
+          updating = true
+          setImmediate(obj.updateAndBroadcast)
+        }
+      } else {
+        obj.updateAndBroadcast()
+      }
+    },
+
+    updateAndBroadcast: function () {
+      updating = false
+      if (update.call(context)) {
+        broadcast()
+      }
+    },
+
+    checkUpdated: function () {
+      if (!obj.live || lazy || updating) {
+        lazy = false
+        if (obj.nextTick && obj.live && lazy) {
+          obj.onUpdate() // use cached value to make more responsive
+        } else {
+          update.apply(context)
+        }
+      }
+    },
+
+    getValue: function () {
+      obj.checkUpdated.apply(context)
+      return obj.value
+    },
+
+    addListener: function (listener) {
+      if (typeof listener !== 'function') {
+        throw new Error('Listeners must be functions.')
+      }
+
+      obj.listeners.push(listener)
+
+      if (!obj.live) {
+        obj.live = true
+        lazy = true
+        onBind.apply(context)
+      }
+
+      return function release () {
+        for (var i = 0, len = obj.listeners.length; i < len; i++) {
+          if (obj.listeners[i] === listener) {
+            obj.listeners.splice(i, 1)
+            break
+          }
+        }
+        if (!obj.listeners.length && obj.live) {
+          obj.live = false
+          onUnbind.apply(context)
+        }
+      }
+    }
+  }
+
+  return obj
+
+  // scoped
+
+  function broadcast () {
+    if (!obj.suspended) {
+      var cachedListeners = obj.listeners.slice(0)
+      for (var i = 0, len = cachedListeners.length; i < len; i++) {
+        cachedListeners[i](obj.value)
+      }
+    }
+  }
+}
+
+}).call(this,require("timers").setImmediate)
+},{"../once-idle":33,"timers":50}],25:[function(require,module,exports){
+// FROM: https://raw.githubusercontent.com/Matt-Esch/virtual-dom/master/virtual-hyperscript/parse-tag.js
+
+'use strict'
+
+var split = require('browser-split')
+
+var classIdSplit = /([\.#]?[a-zA-Z0-9\u007F-\uFFFF_:-]+)/
+var classOrId = /^(\.|#)/
+var mcssClass = /^(\-|[A-Z])/
+
+module.exports = parseTag
+
+function parseTag (tag, attributes, namespace) {
+  var noId = !(attributes.hasOwnProperty('id'))
+
+  var tagParts = split(tag, classIdSplit)
+  var tagName = null
+
+  if (classOrId.test(tagParts[1]) || mcssClass.test(tagParts[1])) {
+    tagName = 'div'
+  }
+
+  var classes, part, type, i, id
+
+  for (i = 0; i < tagParts.length; i++) {
+    part = tagParts[i]
+
+    if (!part) {
+      continue
+    }
+
+    type = part.charAt(0)
+
+    if (mcssClass.test(part)) {
+      // handle micro-css style classes
+      classes = classes || []
+      classes.push(part)
+    } else if (!tagName) {
+      tagName = part
+    } else if (type === '.') {
+      classes = classes || []
+      classes.push(part.substring(1, part.length))
+    } else if (type === '#' && noId) {
+      id = part.substring(1, part.length)
+    }
+  }
+
+  return {
+    tagName: namespace ? tagName : tagName.toUpperCase(),
+    classes: classes,
+    id: id
+  }
+}
+
+function isUpperCase (text) {
+  if (typeof text === 'string' && text) {
+    return text.toUpperCase() === text
+  }
+}
+
+},{"browser-split":6}],26:[function(require,module,exports){
+(function (setImmediate){
+var queue = []
+
+module.exports = function (item) {
+  if (queue.length === 0) {
+    setImmediate(flush)
+  }
+  queue.push(item)
+}
+
+function flush () {
+  while (queue.length) {
+    var item = queue.pop()
+    if (!item.bound && typeof item.release === 'function') {
+      item.release()
+      item.release = null
+    }
+  }
+}
+
+}).call(this,require("timers").setImmediate)
+},{"timers":50}],27:[function(require,module,exports){
+module.exports = function walk (node, fn) {
+  var current = node
+  while (current) {
+    fn(current)
+    current = nextNode(current, node)
+  }
+}
+
+function nextNode (current, root) {
+  var result = current.firstChild
+  while (current && !result && current !== root) {
+    result = current.nextSibling
+    current = current.parentNode
+  }
+  return result
+}
+
+},{}],28:[function(require,module,exports){
+var MutantMap = require('./map')
+var computed = require('./computed')
+var resolve = require('./resolve')
+var KeyValue = require('./lib/key-value')
+var isObservable = require('./is-observable')
+
+module.exports = Lookup
+
+function Lookup (obs, lambdaOrKey, opts) {
+  var mapped = MutantMap(obs, function (item, invalidateOn) {
+    if (typeof lambdaOrKey === 'function') {
+      var value = lambdaOrKey(item, invalidateOn)
+      if (isObservable(value) && value._type === 'MutantKeyValue') {
+        return value // passthru
+      } else if (Array.isArray(value)) {
+        return KeyValue(value[0], value[1])
+      } else if (value != null) {
+        return KeyValue(value, item)
+      }
+    } else if (typeof lambdaOrKey === 'string') {
+      return KeyValue(item[lambdaOrKey], item)
+    }
+  })
+
+  var raw = {}
+  var value = {}
+  var keys = new Set()
+
+  var instance = computed.extended(mapped, function update () {
+    var currentKeys = []
+
+    for (var i = 0; i < mapped.getLength(); i++) {
+      var item = mapped.get(i)
+      if (item) {
+        var key = resolve(item.key)
+        if (key != null) {
+          var rawValue = item.value
+          currentKeys.push(key)
+          keys.add(key)
+          raw[key] = rawValue
+          value[key] = resolve(rawValue)
+        }
+      }
+    }
+
+    // remove deleted keys
+    Array.from(keys.values()).filter(function (k) {
+      return !currentKeys.includes(k)
+    }).forEach(function (key) {
+      keys.delete(key)
+      delete raw[key]
+      delete value[key]
+    })
+
+    return value
+  })
+
+  var result = function MutantLookup (listener) {
+    return instance(listener)
+  }
+
+  result.keys = function () {
+    instance.checkUpdated()
+    return Array.from(keys.values())
+  }
+
+  result.get = function (key) {
+    instance.checkUpdated()
+    return raw[key]
+  }
+
+  result.has = function (key) {
+    instance.checkUpdated()
+    return key in raw
+  }
+
+  return result
+}
+
+},{"./computed":8,"./is-observable":17,"./lib/key-value":23,"./map":29,"./resolve":38}],29:[function(require,module,exports){
+(function (global,setImmediate){
+var resolve = require('./resolve')
+var LazyWatcher = require('./lib/lazy-watcher')
+var isSame = require('./lib/is-same')
+var addCollectionMethods = require('./lib/add-collection-methods')
+var onceIdle = require('./once-idle')
+
+module.exports = Map
+
+function Map (obs, lambda, opts) {
+  // opts: comparer, maxTime, onRemove
+
+  if (typeof lambda !== 'function') throw new Error('mutant/map lambda must be a function')
+
+  var comparer = opts && opts.comparer || null
+  var releases = []
+  var binder = LazyWatcher(update, listen, unlisten)
+
+  if (opts && opts.nextTick) binder.nextTick = true
+  if (opts && opts.idle) binder.idle = true
+
+  var itemInvalidators = new global.Map()
+  var lastValues = new global.Map()
+  var rawSet = new global.Set()
+
+  var items = []
+
+  var raw = []
+  var values = []
+  var watches = []
+
+  binder.value = values
+
+  // incremental update
+  var queue = []
+  var maxTime = null
+  if (opts && opts.maxTime) {
+    maxTime = opts.maxTime
+  }
+
+  var result = function MutantMap (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  addCollectionMethods(result, raw, binder.checkUpdated)
+
+  return result
+
+  // scoped
+
+  function listen () {
+    if (typeof obs === 'function') {
+      releases.push(obs(binder.onUpdate))
+    }
+    rebindAll()
+
+    Array.from(itemInvalidators.values()).forEach(function (invalidators) {
+      invalidators.forEach(function (invalidator) {
+        invalidator.release = invalidator.observable(invalidate.bind(null, invalidator))
+      })
+    })
+
+    if (opts && opts.onListen) {
+      var release = opts.onListen()
+      if (typeof release === 'function') {
+        releases.push(release)
+      }
+    }
+  }
+
+  function unlisten () {
+    while (releases.length) {
+      releases.pop()()
+    }
+    rebindAll()
+
+    Array.from(itemInvalidators.values()).forEach(function (invalidators) {
+      invalidators.forEach(invokeRelease)
+    })
+
+    if (opts && opts.onUnlisten) {
+      opts.onUnlisten()
+    }
+  }
+
+  function update () {
+    var changed = false
+
+    if (items.length !== getLength(obs)) {
+      changed = true
+    }
+
+    var startedAt = Date.now()
+
+    for (var i = 0, len = getLength(obs); i < len; i++) {
+      var item = get(obs, i)
+      var currentItem = items[i]
+      items[i] = item
+
+      if (!isSame(item, currentItem, comparer) || (!binder.live && checkInvalidated(item))) {
+        if (maxTime && Date.now() - startedAt > maxTime) {
+          queueUpdateItem(i)
+        } else {
+          updateItem(i)
+        }
+        changed = true
+      }
+    }
+
+    if (changed) {
+      // clean up cache
+      var oldLength = raw.length
+      var newLength = getLength(obs)
+      Array.from(lastValues.keys()).filter(notIncluded, obs).forEach(removeItem)
+      items.length = newLength
+      values.length = newLength
+      raw.length = newLength
+      for (var index = newLength; index < oldLength; index++) {
+        rebind(index)
+      }
+      Array.from(rawSet.values()).filter(notIncluded, raw).forEach(removeMapped)
+    }
+
+    return changed
+  }
+
+  function checkInvalidated (item) {
+    if (itemInvalidators.has(item)) {
+      return itemInvalidators.get(item).some(function (invalidator) {
+        lastValues.delete(invalidator.item)
+        return !isSame(invalidator.currentValue, resolve(invalidator.observable), comparer)
+      })
+    }
+  }
+
+  function queueUpdateItem (i) {
+    if (!queue.length) {
+      doSoon(flushQueue)
+    }
+    if (!~queue.indexOf(i)) {
+      queue.push(i)
+    }
+  }
+
+  function flushQueue () {
+    var startedAt = Date.now()
+    while (queue.length && (!maxTime || Date.now() - startedAt < maxTime)) {
+      updateItem(queue.shift())
+    }
+    binder.broadcast()
+    if (queue.length) {
+      doSoon(flushQueue)
+    }
+  }
+
+  function invalidateOn (item, obs) {
+    if (!itemInvalidators.has(item)) {
+      itemInvalidators.set(item, [])
+    }
+
+    var invalidators = itemInvalidators.get(item)
+    var invalidator = {
+      currentValue: resolve(obs),
+      observable: obs,
+      item: item,
+      release: null
+    }
+
+    invalidators.push(invalidator)
+
+    if (binder.live) {
+      invalidator.release = invalidator.observable(invalidate.bind(null, invalidator))
+    }
+  }
+
+  function addInvalidateCallback (item) {
+    return invalidateOn.bind(null, item)
+  }
+
+  function removeItem (item) {
+    lastValues.delete(item)
+    if (itemInvalidators.has(item)) {
+      itemInvalidators.get(item).forEach(invokeRelease)
+      itemInvalidators.delete(item)
+    }
+  }
+
+  function removeMapped (mappedItem) {
+    rawSet.delete(mappedItem)
+    if (opts && opts.onRemove) {
+      opts.onRemove(mappedItem)
+    }
+  }
+
+  function invalidate (entry) {
+    var changed = []
+    var length = getLength(obs)
+    lastValues.delete(entry.item)
+    for (var i = 0; i < length; i++) {
+      if (get(obs, i) === entry.item) {
+        changed.push(i)
+      }
+    }
+    if (changed.length) {
+      var rawValue = raw[changed[0]]
+      changed.forEach(function (index) {
+        raw[index] = null
+      })
+      if (!raw.includes(rawValue)) {
+        removeMapped(rawValue)
+      }
+      changed.forEach(updateItem)
+      binder.broadcast()
+    }
+  }
+
+  function updateItem (i) {
+    if (i < getLength(obs)) {
+      var item = get(obs, i)
+      if (!lastValues.has(item) || !isSame(item, item, comparer)) {
+        if (itemInvalidators.has(item)) {
+          itemInvalidators.get(item).forEach(invokeRelease)
+          itemInvalidators.delete(item)
+        }
+        var newValue = lambda(item, addInvalidateCallback(item))
+        if (newValue !== raw[i]) {
+          raw[i] = newValue
+        }
+        rawSet.add(newValue)
+        lastValues.set(item, raw[i])
+      } else {
+        raw[i] = lastValues.get(item)
+      }
+      rebind(i)
+      values[i] = resolve(raw[i])
+    }
+  }
+
+  function rebind (index) {
+    if (watches[index]) {
+      watches[index]()
+      watches[index] = null
+    }
+
+    if (binder.live) {
+      if (typeof raw[index] === 'function') {
+        watches[index] = updateValue(raw[index], index)
+      }
+    }
+  }
+
+  function rebindAll () {
+    for (var i = 0; i < raw.length; i++) {
+      rebind(i)
+    }
+  }
+
+  function updateValue (obs, index) {
+    return obs(function (value) {
+      if (!isSame(values[index], value, comparer)) {
+        values[index] = value
+        binder.broadcast()
+      }
+    })
+  }
+
+  function doSoon (fn) {
+    if (opts.idle) {
+      onceIdle(fn)
+    } else if (opts.delayTime) {
+      setTimeout(fn, opts.delayTime)
+    } else {
+      setImmediate(fn)
+    }
+  }
+}
+
+function get (target, index) {
+  if (typeof target === 'function' && !target.get) {
+    target = target()
+  }
+
+  if (Array.isArray(target)) {
+    return target[index]
+  } else if (target && target.get) {
+    return target.get(index)
+  }
+}
+
+function getLength (target) {
+  if (typeof target === 'function' && !target.getLength) {
+    target = target()
+  }
+
+  if (Array.isArray(target)) {
+    return target.length
+  } else if (target && target.get) {
+    return target.getLength()
+  }
+
+  return 0
+}
+
+function notIncluded (value) {
+  if (this.includes) {
+    return !this.includes(value)
+  } else if (this.indexOf) {
+    return !~this.indexOf(value)
+  } else if (typeof this === 'function') {
+    var array = this()
+    if (array && array.includes) {
+      return !array.includes(value)
+    }
+  }
+  return true
+}
+
+function invokeRelease (item) {
+  if (item.release) {
+    item.release()
+    item.release = null
+  }
+}
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("timers").setImmediate)
+},{"./lib/add-collection-methods":19,"./lib/is-same":22,"./lib/lazy-watcher":24,"./once-idle":33,"./resolve":38,"timers":50}],30:[function(require,module,exports){
+var MutantMap = require('./map')
+var MutantArray = require('./array')
+
+module.exports = MutantMappedArray
+
+function MutantMappedArray (defaultItems, lambda, opts) {
+  opts = opts || {}
+
+  var list = MutantArray(defaultItems, {
+    comparer: opts.comparer,
+    fixedIndexing: true
+  })
+
+  var obs = MutantMap(list, lambda, opts)
+  obs.set = list.set
+
+  obs.push = function (item) {
+    list.push(item)
+    return obs.get(obs.getLength() - 1)
+  }
+
+  obs.insert = function (item, at) {
+    list.insert(item, at)
+    return obs.get(at)
+  }
+
+  obs.remove = function (mappedItem) {
+    var index = obs.indexOf(mappedItem)
+    if (~index) {
+      list.deleteAt(index)
+      return true
+    }
+  }
+
+  obs.move = function (mappedItem, targetIndex) {
+    var currentIndex = obs.indexOf(mappedItem)
+    if (~currentIndex && currentIndex !== targetIndex) {
+      var item = list.get(currentIndex)
+      if (currentIndex < targetIndex) {
+        list.transaction(function () {
+          list.insert(item, targetIndex + 1)
+          list.deleteAt(currentIndex)
+        })
+      } else if (currentIndex > targetIndex) {
+        list.transaction(function () {
+          list.insert(item, targetIndex)
+          list.deleteAt(currentIndex + 1)
+        })
+      }
+
+      if (typeof opts.onMove === 'function') {
+        opts.onMove(mappedItem, currentIndex, targetIndex)
+      }
+    }
+  }
+
+  return obs
+}
+
+},{"./array":7,"./map":29}],31:[function(require,module,exports){
+var MutantLookup = require('./lookup')
+var MutantDict = require('./dict')
+var DictToCollection = require('./dict-to-collection')
+
+module.exports = MutantMappedDict
+
+function MutantMappedDict (defaultItems, lambda, opts) {
+  opts = opts || {}
+
+  var list = MutantDict(defaultItems, {
+    comparer: opts.comparer
+  })
+
+  var observable = MutantLookup(DictToCollection(list), function (item, invalidateOn) {
+    var value = lambda(item.key, item.value, invalidateOn)
+    if (value[0] === item.key && value[1] === item.value) {
+      return item // passthru
+    } else {
+      return value
+    }
+  }, opts)
+
+  observable.set = list.set
+
+  observable.put = function (key, item) {
+    list.put(key, item)
+    return observable.get(key)
+  }
+
+  observable.delete = function (key) {
+    list.delete(key)
+  }
+
+  return observable
+}
+
+},{"./dict":11,"./dict-to-collection":10,"./lookup":28}],32:[function(require,module,exports){
+var computed = require('./computed')
+var resolve = require('./resolve')
+var forEach = require('./for-each')
+var forEachPair = require('./for-each-pair')
+var addLookupMethods = require('./lib/add-lookup-methods')
+
+module.exports = Merge
+
+function Merge (sources) {
+  var raw = {}
+  var value = {}
+  var keys = new Set()
+
+  var instance = computed.extended(sources, function update () {
+    var currentKeys = []
+
+    forEach(sources, function (source) {
+      forEachPair(source, function (key, rawValue) {
+        currentKeys.push(key)
+        keys.add(key)
+        raw[key] = rawValue
+        value[key] = resolve(rawValue)
+      })
+    })
+
+    // remove deleted keys
+    Array.from(keys.values()).filter(function (k) {
+      return !currentKeys.includes(k)
+    }).forEach(function (key) {
+      keys.delete(key)
+      delete raw[key]
+      delete value[key]
+    })
+
+    return value
+  })
+
+  var result = function MutantMerge (listener) {
+    return instance(listener)
+  }
+
+  addLookupMethods(result, raw, instance.checkUpdated)
+
+  return result
+}
+
+},{"./computed":8,"./for-each":13,"./for-each-pair":12,"./lib/add-lookup-methods":20,"./resolve":38}],33:[function(require,module,exports){
+var queue = []
+var running = false
+var max = 1000 / 60
+
+module.exports = function (fn) {
+  if (typeof fn !== 'function') {
+    throw new Error('Must be a function')
+  }
+  queue.push(fn)
+  if (!running) {
+    running = true
+    window.requestIdleCallback(flush)
+  }
+}
+
+function flush () {
+  var startedAt = Date.now()
+
+  while (queue.length && Date.now() - startedAt < max) {
+    queue.shift()()
+  }
+
+  if (queue.length) {
+    window.requestIdleCallback(flush)
+  } else {
+    running = false
+  }
+}
+
+},{}],34:[function(require,module,exports){
+(function (setImmediate){
+var watch = require('./watch')
+module.exports = function onceTrue (value, fn) {
+  var done = false
+  var release = watch(value, (v) => {
+    if (v && !done) {
+      done = true
+      setImmediate(doRelease)
+      fn(v)
+    }
+  }, { nextTick: true })
+
+  return release
+
+  function doRelease () {
+    release()
+  }
+}
+
+}).call(this,require("timers").setImmediate)
+},{"./watch":47,"timers":50}],35:[function(require,module,exports){
+var LazyWatcher = require('./lib/lazy-watcher')
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+
+module.exports = ProxyCollection
+
+function ProxyCollection (source, opts) {
+  var releases = []
+
+  var binder = LazyWatcher(update, listen, unlisten)
+  binder.value = resolve(source)
+
+  if (opts && opts.nextTick) binder.nextTick = true
+  if (opts && opts.idle) binder.idle = true
+
+  var observable = function MutantProxyCollection (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  observable.get = function (index) {
+    if (isObservable(source) && source.get) {
+      return source.get(index)
+    } else if (Array.isArray(resolve(source))) {
+      return resolve(source)[index]
+    }
+  }
+
+  observable.getLength = function () {
+    if (isObservable(source) && source.getLength) {
+      return source.getLength()
+    } else if (Array.isArray(resolve(source))) {
+      return resolve(source).length
+    }
+  }
+
+  observable.includes = function (value) {
+    if (isObservable(source) && source.includes) {
+      return source.includes(value)
+    } else if (Array.isArray(resolve(source))) {
+      return !!~resolve(source).indexOf(value)
+    }
+  }
+
+  observable.indexOf = function (value) {
+    if (isObservable(source) && source.indexOf) {
+      return source.indexOf(value)
+    } else if (Array.isArray(resolve(source))) {
+      return resolve(source).indexOf(value)
+    }
+  }
+
+  observable.forEach = function (fn, context) {
+    if (isObservable(source) && source.forEach) {
+      return source.forEach(fn, context)
+    } else if (Array.isArray(resolve(source))) {
+      return resolve(source).slice().forEach(fn, context)
+    }
+  }
+
+  observable.find = function (fn) {
+    if (isObservable(source) && source.find) {
+      return source.find(fn)
+    } else if (Array.isArray(resolve(source))) {
+      return resolve(source).find(fn)
+    }
+  }
+
+  observable.set = function (newSource) {
+    unlisten()
+    source = newSource
+    if (binder.live) {
+      listen()
+    }
+    binder.onUpdate()
+  }
+
+  return observable
+
+  // scoped
+
+  function listen () {
+    if (isObservable(source)) {
+      releases.push(
+        source(binder.onUpdate)
+      )
+    }
+  }
+
+  function unlisten () {
+    while (releases.length) {
+      releases.pop()()
+    }
+  }
+
+  function update () {
+    binder.value = resolve(source) || {}
+    return true
+  }
+}
+
+},{"./is-observable":17,"./lib/lazy-watcher":24,"./resolve":38}],36:[function(require,module,exports){
+var LazyWatcher = require('./lib/lazy-watcher')
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+
+module.exports = ProxyDict
+
+function ProxyDict (source, opts) {
+  var releases = []
+
+  var binder = LazyWatcher(update, listen, unlisten)
+  binder.value = resolve(source)
+
+  if (opts && opts.nextTick) binder.nextTick = true
+  if (opts && opts.idle) binder.idle = true
+
+  var observable = function MutantProxyDict (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  observable.get = function (key) {
+    if (isObservable(source) && source.get) {
+      return source.get(key)
+    } else if (resolve(source)) {
+      return resolve(source)[key]
+    }
+  }
+
+  observable.keys = function () {
+    if (isObservable(source) && source.keys) {
+      return resolve(source.keys)
+    } else if (resolve(source)) {
+      return Object.keys(resolve(source))
+    } else {
+      return []
+    }
+  }
+
+  observable.has = function (key) {
+    if (isObservable(source) && source.has) {
+      return source.has(key)
+    } else if (resolve(source)) {
+      return key in resolve(source)
+    }
+  }
+
+  observable.set = function (newSource) {
+    unlisten()
+    source = newSource
+    if (binder.live) {
+      listen()
+    }
+    binder.onUpdate()
+  }
+
+  return observable
+
+  // scoped
+
+  function listen () {
+    if (isObservable(source)) {
+      releases.push(
+        source(binder.onUpdate)
+      )
+    }
+  }
+
+  function unlisten () {
+    while (releases.length) {
+      releases.pop()()
+    }
+  }
+
+  function update () {
+    binder.value = resolve(source) || {}
+    return true
+  }
+}
+
+},{"./is-observable":17,"./lib/lazy-watcher":24,"./resolve":38}],37:[function(require,module,exports){
+var LazyWatcher = require('./lib/lazy-watcher')
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+
+module.exports = Proxy
+
+function Proxy (source, opts) {
+  var releases = []
+
+  var binder = LazyWatcher(update, listen, unlisten)
+  binder.value = resolve(source)
+
+  if (opts && opts.nextTick) binder.nextTick = true
+  if (opts && opts.idle) binder.idle = true
+
+  var observable = function MutantProxy (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  observable.get = function () {
+    return source
+  }
+
+  observable.set = function (newSource) {
+    unlisten()
+    source = newSource
+    if (binder.live) {
+      listen()
+    }
+    binder.onUpdate()
+  }
+
+  return observable
+
+  // scoped
+
+  function listen () {
+    if (isObservable(source)) {
+      releases.push(
+        source(binder.onUpdate)
+      )
+    }
+  }
+
+  function unlisten () {
+    while (releases.length) {
+      releases.pop()()
+    }
+  }
+
+  function update () {
+    binder.value = resolve(source)
+    return true
+  }
+}
+
+},{"./is-observable":17,"./lib/lazy-watcher":24,"./resolve":38}],38:[function(require,module,exports){
+module.exports = resolve
+
+function resolve (source) {
+  return typeof source === 'function' ? source() : source
+}
+
+},{}],39:[function(require,module,exports){
+module.exports = Send
+
+function Send (fn, data, opts) {
+  return {
+    fn: fn,
+    data: data,
+    opts: opts,
+    event: null,
+    handleEvent: handleEvent
+  }
+}
+
+function handleEvent (e) {
+  e.stopPropagation()
+  e.preventDefault()
+  this.event = e
+  this.fn(this.data)
+}
+
+},{}],40:[function(require,module,exports){
+var LazyWatcher = require('./lib/lazy-watcher')
+
+module.exports = Set
+
+function Set (defaultValues, opts) {
+  var instance = new ProtoSet(defaultValues, opts)
+  var observable = instance.MutantSet.bind(instance)
+  observable.add = instance.add.bind(instance)
+  observable.clear = instance.clear.bind(instance)
+  observable.delete = instance.delete.bind(instance)
+  observable.has = instance.has.bind(instance)
+  observable.set = instance.set.bind(instance)
+  observable.get = instance.get.bind(instance)
+  observable.transaction = instance.transaction.bind(instance)
+  observable.getLength = instance.getLength.bind(instance)
+  return observable
+}
+
+// optimise memory usage
+function ProtoSet (defaultValues, opts) {
+  var self = this
+  self.object = []
+  self.sources = []
+  self.releases = []
+  self.binder = LazyWatcher.call(self, self._update, self._listen, self._unlisten)
+  self.binder.value = this.object
+
+  if (opts && opts.nextTick) self.binder.nextTick = true
+  if (opts && opts.idle) self.binder.idle = true
+
+  if (defaultValues && defaultValues.length) {
+    defaultValues.forEach(function (valueOrObs) {
+      if (!~self.sources.indexOf(valueOrObs)) {
+        self.sources.push(valueOrObs)
+      }
+    })
+    this._update()
+  }
+}
+
+ProtoSet.prototype.MutantSet = function (listener) {
+  if (!listener) {
+    return this.binder.getValue()
+  }
+  return this.binder.addListener(listener)
+}
+
+ProtoSet.prototype.add = function (valueOrObs) {
+  if (!~this.sources.indexOf(valueOrObs)) {
+    this.sources.push(valueOrObs)
+    if (this.binder.live) {
+      this.releases[this.sources.length - 1] = this._bind(valueOrObs)
+    }
+    this.binder.onUpdate()
+  }
+}
+
+ProtoSet.prototype.clear = function () {
+  this.releases.forEach(tryInvoke)
+  this.sources.length = 0
+  this.releases.length = 0
+  this.binder.onUpdate()
+}
+
+ProtoSet.prototype.delete = function (valueOrObs) {
+  var index = this.sources.indexOf(valueOrObs)
+  if (~index) {
+    this.sources.splice(index, 1)
+    this.releases.splice(index, 1).forEach(tryInvoke)
+    this.binder.onUpdate()
+  }
+}
+
+ProtoSet.prototype.has = function (valueOrObs) {
+  return !!~this.object.indexOf(valueOrObs)
+}
+
+ProtoSet.prototype.set = function (values) {
+  var self = this
+  var changed = false
+
+  if (Array.isArray(values)) {
+    for (var i = this.sources.length - 1; i >= 0; i -= 1) {
+      if (!~values.indexOf(this.sources[i])) {
+        changed = true
+        self.sources.splice(i, 1)
+      }
+    }
+    values.forEach(function (value) {
+      if (!~self.sources.indexOf(value)) {
+        changed = true
+        self.sources.push(value)
+      }
+    })
+  } else {
+    if (self.sources.length > 0) {
+      self.sources.length = 0
+      changed = true
+    }
+  }
+
+  if (changed) {
+    self.binder.onUpdate()
+  }
+}
+
+ProtoSet.prototype.get = function (index) {
+  return this.sources[index]
+}
+
+ProtoSet.prototype.getLength = function () {
+  return this.sources.length
+}
+
+ProtoSet.prototype._bind = function (valueOrObs) {
+  return typeof valueOrObs === 'function' ? valueOrObs(this.binder.onUpdate) : null
+}
+
+ProtoSet.prototype.transaction = function (fn) {
+  this.binder.transaction(this, fn)
+}
+
+ProtoSet.prototype._listen = function () {
+  var self = this
+  self.sources.forEach(function (obs, i) {
+    self.releases[i] = self._bind(obs)
+  })
+}
+
+ProtoSet.prototype._unlisten = function () {
+  this.releases.forEach(tryInvoke)
+  this.releases.length = 0
+}
+
+ProtoSet.prototype._update = function () {
+  var currentValues = this.object.map(get)
+  var newValues = this.sources.map(resolve)
+  currentValues.filter(notIncluded, newValues).forEach(removeFrom, this.object)
+  newValues.filter(notIncluded, currentValues).forEach(addTo, this.object)
+  return true
+}
+
+function get (value) {
+  return value
+}
+
+function resolve (source) {
+  return typeof source === 'function' ? source() : source
+}
+
+function notIncluded (value) {
+  return !~this.indexOf(value)
+}
+
+function removeFrom (item) {
+  var index = this.indexOf(item)
+  if (~index) {
+    this.splice(index, 1)
+  }
+}
+
+function addTo (item) {
+  this.push(item)
+}
+
+function tryInvoke (func) {
+  if (typeof func === 'function') {
+    func()
+  }
+}
+
+},{"./lib/lazy-watcher":24}],41:[function(require,module,exports){
+var Value = require('./value')
+var LazyWatcher = require('./lib/lazy-watcher')
+var isSame = require('./lib/is-same')
+var extend = require('xtend')
+
+module.exports = Struct
+
+var blackList = {
+  'length': 'Clashes with `Function.prototype.length`.\n',
+  'name': 'Clashes with `Function.prototype.name`\n',
+  'set': '`set` is a reserved key of struct\n'
+}
+
+function Struct (properties, opts) {
+  var object = Object.create({})
+  var releases = []
+  var binder = LazyWatcher(update, listen, unlisten)
+  binder.value = object
+
+  if (opts && opts.nextTick) binder.nextTick = true
+  if (opts && opts.idle) binder.idle = true
+
+  var comparer = opts && opts.comparer || null
+
+  var observable = function MutantStruct (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  var keys = Object.keys(properties)
+  var suspendBroadcast = false
+
+  keys.forEach(function (key) {
+    if (blackList.hasOwnProperty(key)) {
+      throw new Error("Cannot create a struct with a key named '" + key + "'.\n" + blackList[key])
+    }
+
+    var obs = typeof properties[key] === 'function'
+      ? properties[key]
+      : Value(properties[key])
+
+    object[key] = obs()
+    observable[key] = obs
+  })
+
+  observable.set = function (values, opts) {
+    var lastValue = suspendBroadcast
+
+    suspendBroadcast = true
+    values = values || {}
+
+    if (opts && opts.merge) {
+      values = extend(object, values)
+    }
+
+    // update inner observables
+    keys.forEach(function (key) {
+      if (observable[key]() !== values[key]) {
+        observable[key].set(values[key])
+      }
+    })
+
+    // store additional keys (but don't create observables)
+    Object.keys(values).forEach(function (key) {
+      if (!(key in properties)) {
+        object[key] = values[key]
+      }
+    })
+
+    suspendBroadcast = lastValue
+    if (!suspendBroadcast) {
+      binder.broadcast()
+    }
+  }
+
+  return observable
+
+  // scoped
+
+  function listen () {
+    keys.map(function (key) {
+      var obs = observable[key]
+      releases.push(obs(function (val) {
+        if (!isSame(val, object[key], comparer)) {
+          object[key] = val
+          if (!suspendBroadcast) {
+            binder.broadcast(object)
+          }
+        }
+      }))
+    })
+  }
+
+  function unlisten () {
+    while (releases.length) {
+      releases.pop()()
+    }
+  }
+
+  function update () {
+    var changed = false
+    keys.forEach(function (key) {
+      var newValue = observable[key]()
+      if (!isSame(newValue, object[key], comparer)) {
+        object[key] = observable[key]()
+        changed = true
+      }
+    })
+    return changed
+  }
+}
+
+},{"./lib/is-same":22,"./lib/lazy-watcher":24,"./value":44,"xtend":52}],42:[function(require,module,exports){
+(function (global){
+const h = require('./html-element').forDocument(global.document, 'http://www.w3.org/2000/svg')
+const SVG_PROPERTIES = [
+  'about', 'accent-height', 'accumulate', 'additive', 'alignment-baseline', 'alphabetic', 'amplitude', 'arabic-form',
+  'ascent', 'attributeName', 'attributeType', 'azimuth', 'bandwidth', 'baseFrequency', 'baseProfile', 'baseline-shift',
+  'bbox', 'begin', 'bias', 'by', 'calcMode', 'cap-height', 'class', 'clip', 'clip-path', 'clip-rule', 'clipPathUnits',
+  'color', 'color-interpolation', 'color-interpolation-filters', 'color-profile', 'color-rendering', 'content',
+  'contentScriptType', 'contentStyleType', 'cursor', 'cx', 'cy', 'd', 'datatype', 'defaultAction', 'descent', 'diffuseConstant',
+  'direction', 'display', 'divisor', 'dominant-baseline', 'dur', 'dx', 'dy', 'edgeMode', 'editable', 'elevation',
+  'enable-background', 'end', 'event', 'exponent', 'externalResourcesRequired', 'fill', 'fill-opacity', 'fill-rule',
+  'filter', 'filterRes', 'filterUnits', 'flood-color', 'flood-opacity', 'focusHighlight', 'focusable', 'font-family',
+  'font-size', 'font-size-adjust', 'font-stretch', 'font-style', 'font-variant', 'font-weight', 'format', 'from',
+  'fx', 'fy', 'g1', 'g2', 'glyph-name', 'glyph-orientation-horizontal', 'glyph-orientation-vertical', 'glyphRef',
+  'gradientTransform', 'gradientUnits', 'handler', 'hanging', 'height', 'horiz-adv-x', 'horiz-origin-x', 'horiz-origin-y',
+  'id', 'ideographic', 'image-rendering', 'in', 'in2', 'initialVisibility', 'intercept', 'k', 'k1', 'k2', 'k3', 'k4',
+  'kernelMatrix', 'kernelUnitLength', 'kerning', 'keyPoints', 'keySplines', 'keyTimes', 'lang', 'lengthAdjust', 'letter-spacing',
+  'lighting-color', 'limitingConeAngle', 'local', 'marker-end', 'marker-mid', 'marker-start', 'markerHeight', 'markerUnits',
+  'markerWidth', 'mask', 'maskContentUnits', 'maskUnits', 'mathematical', 'max', 'media', 'mediaCharacterEncoding',
+  'mediaContentEncodings', 'mediaSize', 'mediaTime', 'method', 'min', 'mode', 'name', 'nav-down', 'nav-down-left',
+  'nav-down-right', 'nav-left', 'nav-next', 'nav-prev', 'nav-right', 'nav-up', 'nav-up-left', 'nav-up-right', 'numOctaves',
+  'observer', 'offset', 'opacity', 'operator', 'order', 'orient', 'orientation', 'origin', 'overflow', 'overlay',
+  'overline-position', 'overline-thickness', 'panose-1', 'path', 'pathLength', 'patternContentUnits', 'patternTransform',
+  'patternUnits', 'phase', 'playbackOrder', 'pointer-events', 'points', 'pointsAtX', 'pointsAtY', 'pointsAtZ', 'preserveAlpha',
+  'preserveAspectRatio', 'primitiveUnits', 'propagate', 'property', 'r', 'radius', 'refX', 'refY', 'rel', 'rendering-intent',
+  'repeatCount', 'repeatDur', 'requiredExtensions', 'requiredFeatures', 'requiredFonts', 'requiredFormats', 'resource', 'restart',
+  'result', 'rev', 'role', 'rotate', 'rx', 'ry', 'scale', 'seed', 'shape-rendering', 'slope', 'snapshotTime', 'spacing',
+  'specularConstant', 'specularExponent', 'spreadMethod', 'startOffset', 'stdDeviation', 'stemh', 'stemv', 'stitchTiles',
+  'stop-color', 'stop-opacity', 'strikethrough-position', 'strikethrough-thickness', 'string', 'stroke', 'stroke-dasharray',
+  'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-opacity', 'stroke-width', 'surfaceScale',
+  'syncBehavior', 'syncBehaviorDefault', 'syncMaster', 'syncTolerance', 'syncToleranceDefault', 'systemLanguage', 'tableValues',
+  'target', 'targetX', 'targetY', 'text-anchor', 'text-decoration', 'text-rendering', 'textLength', 'timelineBegin', 'title',
+  'to', 'transform', 'transformBehavior', 'type', 'typeof', 'u1', 'u2', 'underline-position', 'underline-thickness', 'unicode',
+  'unicode-bidi', 'unicode-range', 'units-per-em', 'v-alphabetic', 'v-hanging', 'v-ideographic', 'v-mathematical', 'values',
+  'version', 'vert-adv-y', 'vert-origin-x', 'vert-origin-y', 'viewBox', 'viewTarget', 'visibility', 'width', 'widths',
+  'word-spacing', 'writing-mode', 'x', 'x-height', 'x1', 'x2', 'xChannelSelector', 'y', 'y1', 'y2', 'yChannelSelector', 'z', 'zoomAndPan'
+]
+
+module.exports = function (tag, properties, children) {
+  if (!children && (Array.isArray(properties) || isText(properties))) {
+    children = properties
+    properties = null
+  }
+
+  properties = properties || {}
+  properties.attributes = properties.attributes || {}
+
+  for (var key in properties) {
+    if (SVG_PROPERTIES.includes(key)) {
+      properties.attributes[key] = properties[key]
+      properties[key] = null
+    }
+  }
+
+  return h(tag, properties, children)
+}
+
+module.exports.destroy = require('./html-element').destroy
+
+function isText (value) {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"./html-element":14}],43:[function(require,module,exports){
+var LazyWatcher = require('./lib/lazy-watcher')
+var watchThrottle = require('./watch-throttle')
+var resolve = require('./resolve')
+
+module.exports = function Throttle (input, minDelay) {
+  // default delay is 20 ms
+  minDelay = minDelay || 20
+
+  var binder = LazyWatcher(update, listen, unlisten)
+  binder.value = resolve(input)
+  var releases = []
+
+  var result = function MutantThrottle (listener) {
+    if (!listener) {
+      return binder.getValue()
+    }
+    return binder.addListener(listener)
+  }
+
+  function update () {
+    binder.value = resolve(input)
+    return true
+  }
+
+  function listen () {
+    releases.push(watchThrottle(input, minDelay, binder.onUpdate))
+  }
+
+  function unlisten () {
+    while (releases.length) {
+      releases.pop()()
+    }
+  }
+
+  return result
+}
+
+},{"./lib/lazy-watcher":24,"./resolve":38,"./watch-throttle":46}],44:[function(require,module,exports){
+module.exports = Observable
+
+function Observable (value, opts) {
+  var listeners = []
+  value = getValue(value, opts)
+
+  observable.set = function (v) {
+    value = getValue(v, opts)
+
+    var cachedListeners = listeners.slice(0)
+    for (var i = 0, len = cachedListeners.length; i < len; i++) {
+      cachedListeners[i](value)
+    }
+  }
+
+  return observable
+
+  function observable (listener) {
+    if (!listener) {
+      return value
+    }
+
+    if (typeof listener !== 'function') {
+      throw new Error('Listeners must be functions.')
+    }
+
+    listeners.push(listener)
+
+    return function remove () {
+      for (var i = 0, len = listeners.length; i < len; i++) {
+        if (listeners[i] === listener) {
+          listeners.splice(i, 1)
+          break
+        }
+      }
+    }
+  }
+}
+
+function getValue (value, opts) {
+  if (value == null) {
+    if (opts && opts.defaultValue != null) {
+      value = opts.defaultValue
+    } else {
+      value = null
+    }
+  }
+  return value
+}
+
+},{}],45:[function(require,module,exports){
+(function (setImmediate){
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+var onceIdle = require('./once-idle')
+
+module.exports = watchAll
+
+function watchAll (observables, listener, opts) {
+  if (!Array.isArray(observables)) {
+    observables = [ observables ]
+  }
+
+  var broadcasting = false
+  var releases = observables.map(bind, broadcast)
+
+  broadcast()
+
+  return function () {
+    releases.forEach(tryInvoke)
+    releases.length = 0
+  }
+
+  function broadcast () {
+    if (opts && opts.idle) {
+      if (!broadcasting) {
+        broadcasting = true
+        onceIdle(broadcastNow)
+      }
+    } else if (opts && opts.nextTick) {
+      if (!broadcasting) {
+        broadcasting = true
+        setImmediate(broadcastNow)
+      }
+    } else {
+      broadcastNow()
+    }
+  }
+
+  function broadcastNow () {
+    broadcasting = false
+    listener.apply(this, observables.map(resolve))
+  }
+}
+
+function bind (value) {
+  if (isObservable(value)) {
+    return value(this)
+  }
+}
+
+function tryInvoke (value) {
+  if (typeof value === 'function') {
+    return value()
+  }
+}
+
+}).call(this,require("timers").setImmediate)
+},{"./is-observable":17,"./once-idle":33,"./resolve":38,"timers":50}],46:[function(require,module,exports){
+var resolve = require('./resolve')
+var isObservable = require('./is-observable')
+
+module.exports = function throttledWatch (obs, minDelay, listener, opts) {
+  var throttling = false
+  var lastRefreshAt = 0
+  var lastValueAt = 0
+  var throttleTimer = null
+
+  var broadcastInitial = !opts || opts.broadcastInitial !== false
+
+  // default delay is 20 ms
+  minDelay = minDelay || 20
+
+  // run unless opts.broadcastInitial === false
+  if (broadcastInitial) {
+    listener(resolve(obs))
+  }
+
+  if (isObservable(obs)) {
+    return obs(function (v) {
+      if (!throttling) {
+        if (Date.now() - lastRefreshAt > minDelay) {
+          refresh()
+        } else {
+          throttling = true
+          throttleTimer = setInterval(refresh, minDelay)
+        }
+      }
+      lastValueAt = Date.now()
+    })
+  } else {
+    return noop
+  }
+
+  function refresh () {
+    lastRefreshAt = Date.now()
+    listener(obs())
+    if (throttling && lastRefreshAt - lastValueAt > minDelay) {
+      throttling = false
+      clearInterval(throttleTimer)
+    }
+  }
+}
+
+function noop () {}
+
+},{"./is-observable":17,"./resolve":38}],47:[function(require,module,exports){
+module.exports = watch
+
+function watch (observable, listener) {
+  listener = listener || noop
+  if (typeof observable === 'function') {
+    var remove = observable(listener)
+    listener(observable())
+    return remove
+  } else {
+    listener(observable)
+    return noop
+  }
+}
+
+function noop () {}
+
+},{}],48:[function(require,module,exports){
+var computed = require('./computed')
+var isObservable = require('./is-observable')
+
+module.exports = When
+
+function When (obs, ifTrue, ifFalse) {
+  ifTrue = handleInnerValues(ifTrue)
+  ifFalse = handleInnerValues(ifFalse)
+  return computed([obs, ifTrue, ifFalse], lambda)
+}
+
+function lambda (value, ifTrue, ifFalse) {
+  return value ? ifTrue : ifFalse
+}
+
+function handleInnerValues (obs) {
+  if (Array.isArray(obs) && obs.some(isObservable)) {
+    // HACK: resolve inner observs
+    var inner = []
+    return computed(obs, function () {
+      for (var i = 0; i < arguments.length; i++) {
+        inner[i] = arguments[i]
+      }
+      inner.length = arguments.length
+      return inner
+    })
+  }
+  return obs
+}
+
+},{"./computed":8,"./is-observable":17}],49:[function(require,module,exports){
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}],50:[function(require,module,exports){
+(function (setImmediate,clearImmediate){
+var nextTick = require('process/browser.js').nextTick;
+var apply = Function.prototype.apply;
+var slice = Array.prototype.slice;
+var immediateIds = {};
+var nextImmediateId = 0;
+
+// DOM APIs, for completeness
+
+exports.setTimeout = function() {
+  return new Timeout(apply.call(setTimeout, window, arguments), clearTimeout);
+};
+exports.setInterval = function() {
+  return new Timeout(apply.call(setInterval, window, arguments), clearInterval);
+};
+exports.clearTimeout =
+exports.clearInterval = function(timeout) { timeout.close(); };
+
+function Timeout(id, clearFn) {
+  this._id = id;
+  this._clearFn = clearFn;
+}
+Timeout.prototype.unref = Timeout.prototype.ref = function() {};
+Timeout.prototype.close = function() {
+  this._clearFn.call(window, this._id);
+};
+
+// Does not start the time, just sets up the members needed.
+exports.enroll = function(item, msecs) {
+  clearTimeout(item._idleTimeoutId);
+  item._idleTimeout = msecs;
+};
+
+exports.unenroll = function(item) {
+  clearTimeout(item._idleTimeoutId);
+  item._idleTimeout = -1;
+};
+
+exports._unrefActive = exports.active = function(item) {
+  clearTimeout(item._idleTimeoutId);
+
+  var msecs = item._idleTimeout;
+  if (msecs >= 0) {
+    item._idleTimeoutId = setTimeout(function onTimeout() {
+      if (item._onTimeout)
+        item._onTimeout();
+    }, msecs);
+  }
+};
+
+// That's not how node.js implements it but the exposed api is the same.
+exports.setImmediate = typeof setImmediate === "function" ? setImmediate : function(fn) {
+  var id = nextImmediateId++;
+  var args = arguments.length < 2 ? false : slice.call(arguments, 1);
+
+  immediateIds[id] = true;
+
+  nextTick(function onNextTick() {
+    if (immediateIds[id]) {
+      // fn.call() is faster so we optimize for the common use-case
+      // @see http://jsperf.com/call-apply-segu
+      if (args) {
+        fn.apply(null, args);
+      } else {
+        fn.call(null);
+      }
+      // Prevent ids from leaking
+      exports.clearImmediate(id);
+    }
+  });
+
+  return id;
+};
+
+exports.clearImmediate = typeof clearImmediate === "function" ? clearImmediate : function(id) {
+  delete immediateIds[id];
+};
+}).call(this,require("timers").setImmediate,require("timers").clearImmediate)
+},{"process/browser.js":49,"timers":50}],51:[function(require,module,exports){
+/*!
+ * vanilla-picker v2.4.3
+ * https://vanilla-picker.js.org
+ *
+ * Copyright 2017-2018 Andreas Borgen (https://github.com/Sphinxxxx), Adam Brooks (https://github.com/dissimulate)
+ * Released under the ISC license.
+ */
+(function (global, factory) {
+  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
+  typeof define === 'function' && define.amd ? define(factory) :
+  (global.Picker = factory());
+}(this, (function () { 'use strict';
+
+  var classCallCheck = function (instance, Constructor) {
+    if (!(instance instanceof Constructor)) {
+      throw new TypeError("Cannot call a class as a function");
+    }
+  };
+
+  var createClass = function () {
+    function defineProperties(target, props) {
+      for (var i = 0; i < props.length; i++) {
+        var descriptor = props[i];
+        descriptor.enumerable = descriptor.enumerable || false;
+        descriptor.configurable = true;
+        if ("value" in descriptor) descriptor.writable = true;
+        Object.defineProperty(target, descriptor.key, descriptor);
+      }
+    }
+
+    return function (Constructor, protoProps, staticProps) {
+      if (protoProps) defineProperties(Constructor.prototype, protoProps);
+      if (staticProps) defineProperties(Constructor, staticProps);
+      return Constructor;
+    };
+  }();
+
+  var slicedToArray = function () {
+    function sliceIterator(arr, i) {
+      var _arr = [];
+      var _n = true;
+      var _d = false;
+      var _e = undefined;
+
+      try {
+        for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {
+          _arr.push(_s.value);
+
+          if (i && _arr.length === i) break;
+        }
+      } catch (err) {
+        _d = true;
+        _e = err;
+      } finally {
+        try {
+          if (!_n && _i["return"]) _i["return"]();
+        } finally {
+          if (_d) throw _e;
+        }
+      }
+
+      return _arr;
+    }
+
+    return function (arr, i) {
+      if (Array.isArray(arr)) {
+        return arr;
+      } else if (Symbol.iterator in Object(arr)) {
+        return sliceIterator(arr, i);
+      } else {
+        throw new TypeError("Invalid attempt to destructure non-iterable instance");
+      }
+    };
+  }();
+
+  String.prototype.startsWith = String.prototype.startsWith || function (needle) {
+  	return this.indexOf(needle) === 0;
+  };
+  String.prototype.padStart = String.prototype.padStart || function (len, pad) {
+  	var str = this;while (str.length < len) {
+  		str = pad + str;
+  	}return str;
+  };
+
+  var colorNames = '735AACA770//Xub218Pj/mo5+uvX6mdAP//gtpf//Ur258P//q1d9fXcxop/+TEq9zAAAAqfg/+vN6m1AAD/ngoiiviqt6pSoqzyo3riHxvdX56grk1f/8Aax10mkeqts/39QxbtZJXttkb//jcyxm3BQ86rmAP//wl5AACLwqqAIuL3y8uIYLwv1qampniqAGQAns5vbdrmohiwCLw5uVWsvsdd/4wAsegmTLMqagiwAAsqi6ZZ6uz6j7yPxtzSD2Lxk3L09PudbAM7RwsolADT0kz/xSTfuhAL//vfhaWlpyuxHpD/43rsiIiwn9//rw39uIosi9bp/wD/6w73Nzc9s5+Pj/6v8/9cA3b42qUg6vxgICArmaAIAAtdfrf8vf9n8P/wek3/2m0xnczVxc3bvSwCCsdt///wrvp8OaMs5i5ub6iyk//D1e8ifPwAoui//rNpyxrdjmw9c8ICAq4i4P//mx9+vrSq8t09PTx1ukO6Qqlv/7bBuuy/6B690uILKqpfdh876sd9d4iZnehsMTe0dv///g71lAP8A4nmMs0ys9u+vDmg9d/wD/4pmgAAAcurZs2qzllAADN4lkulXT6txk3Db66qPLNxozre2juokuAPqalj3SNHMgdkxxWF60pGRlwxfl9f/6hr5/+Thx6q/+S1m85/96tutd/fXmszxgIAAe4ma44j8rl/6UAmu0/0UA8so2nDWji87uiqumqmPuY9xbr+7u4rs23CTsb8/+/V95a/9q577xzYU/78z/8DL7b53aDdsu1sODmb11gACAy5nZjOZ1so/wAAlvevI+Pn09QWnhm7ui0UT94q+oBy7ei9KRg5aqLotXad5oFItasmwMDAaihh87r9fdalrN9p9cICQ7gz//r6k5uAP9/4qhRoK01te0rSM7cwAICA91x2L/Yclr/2NHcw1QODQd6w7oLuua09d6zudh////t359fX1enn//8Ao0ims0y';
+  var colorNamesDeser = void 0;
+
+  var Color = function () {
+  	function Color(r, g, b, a) {
+  		classCallCheck(this, Color);
+
+
+  		var that = this;
+  		function parseString(input) {
+
+  			if (input.startsWith('hsl')) {
+  				var _input$match$map = input.match(/([\-\d\.e]+)/g).map(Number),
+  				    _input$match$map2 = slicedToArray(_input$match$map, 4),
+  				    h = _input$match$map2[0],
+  				    s = _input$match$map2[1],
+  				    l = _input$match$map2[2],
+  				    _a = _input$match$map2[3];
+
+  				if (_a === undefined) {
+  					_a = 1;
+  				}
+
+  				h /= 360;
+  				s /= 100;
+  				l /= 100;
+  				that.hsla = [h, s, l, _a];
+  			}
+
+  			else if (input.startsWith('rgb')) {
+  					var _input$match$map3 = input.match(/([\-\d\.e]+)/g).map(Number),
+  					    _input$match$map4 = slicedToArray(_input$match$map3, 4),
+  					    _r = _input$match$map4[0],
+  					    _g = _input$match$map4[1],
+  					    _b = _input$match$map4[2],
+  					    _a2 = _input$match$map4[3];
+
+  					if (_a2 === undefined) {
+  						_a2 = 1;
+  					}
+
+  					that.rgba = [_r, _g, _b, _a2];
+  				}
+
+  				else {
+  						if (input.startsWith('#')) {
+  							that.rgba = Color.hexToRgb(input);
+  						} else {
+  							that.rgba = Color.nameToRgb(input) || Color.hexToRgb(input);
+  						}
+  					}
+  		}
+
+  		if (r === undefined) ;
+
+
+  		else if (Array.isArray(r)) {
+  				this.rgba = r;
+  			}
+
+  			else if (b === undefined) {
+  					var color = r && ('' + r).trim();
+  					if (color) {
+  						parseString(color.toLowerCase());
+  					}
+  				} else {
+  					this.rgba = [r, g, b, a === undefined ? 1 : a];
+  				}
+  	}
+
+
+  	createClass(Color, [{
+  		key: 'rgba',
+  		get: function get$$1() {
+  			if (this._rgba) {
+  				return this._rgba;
+  			}
+  			if (!this._hsla) {
+  				throw new Error('No color is set');
+  			}
+
+  			return this._rgba = Color.hslToRgb(this._hsla);
+  		},
+  		set: function set$$1(rgb) {
+  			if (rgb.length === 3) {
+  				rgb[3] = 1;
+  			}
+
+  			this._rgba = rgb;
+  			this._hsla = null;
+  		}
+
+
+  	}, {
+  		key: 'rgbString',
+  		get: function get$$1() {
+  			return 'rgb(' + this.rgba.slice(0, 3) + ')';
+  		}
+  	}, {
+  		key: 'rgbaString',
+  		get: function get$$1() {
+  			return 'rgba(' + this.rgba + ')';
+  		}
+  	}, {
+  		key: 'hsla',
+  		get: function get$$1() {
+  			if (this._hsla) {
+  				return this._hsla;
+  			}
+  			if (!this._rgba) {
+  				throw new Error('No color is set');
+  			}
+
+  			return this._hsla = Color.rgbToHsl(this._rgba);
+  		},
+  		set: function set$$1(hsl) {
+  			if (hsl.length === 3) {
+  				hsl[3] = 1;
+  			}
+
+  			this._hsla = hsl;
+  			this._rgba = null;
+  		}
+
+
+  	}, {
+  		key: 'hslString',
+  		get: function get$$1() {
+  			var c = this.hsla;
+  			return 'hsl(' + c[0] * 360 + ',' + c[1] * 100 + '%,' + c[2] * 100 + '%)';
+  		}
+  	}, {
+  		key: 'hslaString',
+  		get: function get$$1() {
+  			var c = this.hsla;
+  			return 'hsla(' + c[0] * 360 + ',' + c[1] * 100 + '%,' + c[2] * 100 + '%,' + c[3] + ')';
+  		}
+  	}, {
+  		key: 'hex',
+  		get: function get$$1() {
+  			var rgb = this.rgba,
+  			    hex = rgb.map(function (x, i) {
+  				return i < 3 ? x.toString(16) : Math.round(x * 255).toString(16);
+  			});
+
+  			return '#' + hex.map(function (x) {
+  				return x.padStart(2, '0');
+  			}).join('');
+  		},
+  		set: function set$$1(hex) {
+  			this.rgba = Color.hexToRgb(hex);
+  		}
+
+
+
+  	}], [{
+  		key: 'hexToRgb',
+  		value: function hexToRgb(input) {
+  			var hex = (input.startsWith('#') ? input.slice(1) : input).replace(/^(\w{3})$/, '$1F') 
+  			.replace(/^(\w)(\w)(\w)(\w)$/, '$1$1$2$2$3$3$4$4') 
+  			.replace(/^(\w{6})$/, '$1FF'); 
+
+  			if (!hex.match(/^([0-9a-fA-F]{8})$/)) {
+  				throw new Error('Unknown hex color; ' + input);
+  			}
+
+  			var rgba = hex.match(/^(\w\w)(\w\w)(\w\w)(\w\w)$/).slice(1) 
+  			.map(function (x) {
+  				return parseInt(x, 16);
+  			}); 
+
+  			rgba[3] = rgba[3] / 255;
+  			return rgba;
+  		}
+
+
+  	}, {
+  		key: 'nameToRgb',
+  		value: function nameToRgb(input) {
+
+  			if (!colorNamesDeser) {
+  				colorNamesDeser = {};
+  				colorNames.match(/.{7}/g).forEach(function (x) {
+  					return colorNamesDeser[x.slice(0, 3)] = atob(x.slice(-4)).split('').map(function (b) {
+  						return b.charCodeAt(0);
+  					});
+  				});
+  			}
+  			var hash = [].reduce.call(input.replace('ey', 'ay'), function (h, c) {
+  				return (h << 2) + c.charCodeAt(0);
+  			}, 0).toString(36).slice(-3);
+
+  			return colorNamesDeser[hash];
+  		}
+
+
+  	}, {
+  		key: 'rgbToHsl',
+  		value: function rgbToHsl(_ref) {
+  			var _ref2 = slicedToArray(_ref, 4),
+  			    r = _ref2[0],
+  			    g = _ref2[1],
+  			    b = _ref2[2],
+  			    a = _ref2[3];
+
+  			r /= 255;
+  			g /= 255;
+  			b /= 255;
+
+  			var max = Math.max(r, g, b),
+  			    min = Math.min(r, g, b);
+  			var h = void 0,
+  			    s = void 0,
+  			    l = (max + min) / 2;
+
+  			if (max === min) {
+  				h = s = 0; 
+  			} else {
+  				var d = max - min;
+  				s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  				switch (max) {
+  					case r:
+  						h = (g - b) / d + (g < b ? 6 : 0);break;
+  					case g:
+  						h = (b - r) / d + 2;break;
+  					case b:
+  						h = (r - g) / d + 4;break;
+  				}
+
+  				h /= 6;
+  			}
+
+  			return [h, s, l, a];
+  		}
+
+
+  	}, {
+  		key: 'hslToRgb',
+  		value: function hslToRgb(_ref3) {
+  			var _ref4 = slicedToArray(_ref3, 4),
+  			    h = _ref4[0],
+  			    s = _ref4[1],
+  			    l = _ref4[2],
+  			    a = _ref4[3];
+
+  			var r = void 0,
+  			    g = void 0,
+  			    b = void 0;
+
+  			if (s === 0) {
+  				r = g = b = l; 
+  			} else {
+  				var hue2rgb = function hue2rgb(p, q, t) {
+  					if (t < 0) t += 1;
+  					if (t > 1) t -= 1;
+  					if (t < 1 / 6) return p + (q - p) * 6 * t;
+  					if (t < 1 / 2) return q;
+  					if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  					return p;
+  				};
+
+  				var q = l < 0.5 ? l * (1 + s) : l + s - l * s,
+  				    p = 2 * l - q;
+
+  				r = hue2rgb(p, q, h + 1 / 3);
+  				g = hue2rgb(p, q, h);
+  				b = hue2rgb(p, q, h - 1 / 3);
+  			}
+
+  			var rgba = [r * 255, g * 255, b * 255].map(Math.round);
+  			rgba[3] = a;
+
+  			return rgba;
+  		}
+  	}]);
+  	return Color;
+  }();
+
+  var root = window;
+
+  function dragTracker(options) {
+
+
+      var ep = Element.prototype;
+      if (!ep.matches) ep.matches = ep.msMatchesSelector || ep.webkitMatchesSelector;
+      if (!ep.closest) ep.closest = function (s) {
+          var node = this;
+          do {
+              if (node.matches(s)) return node;
+              node = node.tagName === 'svg' ? node.parentNode : node.parentElement;
+          } while (node);
+
+          return null;
+      };
+
+      options = options || {};
+      var container = options.container || document.documentElement,
+          selector = options.selector,
+          callback = options.callback || console.log,
+          callbackStart = options.callbackDragStart,
+          callbackEnd = options.callbackDragEnd,
+
+      callbackClick = options.callbackClick,
+          propagate = options.propagateEvents,
+          roundCoords = options.roundCoords !== false,
+          dragOutside = options.dragOutside !== false,
+
+      handleOffset = options.handleOffset || options.handleOffset !== false;
+      var offsetToCenter = null;
+      switch (handleOffset) {
+          case 'center':
+              offsetToCenter = true;break;
+          case 'topleft':
+          case 'top-left':
+              offsetToCenter = false;break;
+      }
+
+      var dragState = void 0;
+
+      function getMousePos(e, elm, offset, stayWithin) {
+          var x = e.clientX,
+              y = e.clientY;
+
+          function respectBounds(value, min, max) {
+              return Math.max(min, Math.min(value, max));
+          }
+
+          if (elm) {
+              var bounds = elm.getBoundingClientRect();
+              x -= bounds.left;
+              y -= bounds.top;
+
+              if (offset) {
+                  x -= offset[0];
+                  y -= offset[1];
+              }
+              if (stayWithin) {
+                  x = respectBounds(x, 0, bounds.width);
+                  y = respectBounds(y, 0, bounds.height);
+              }
+
+              if (elm !== container) {
+                  var center = offsetToCenter !== null ? offsetToCenter
+                  : elm.nodeName === 'circle' || elm.nodeName === 'ellipse';
+
+                  if (center) {
+                      x -= bounds.width / 2;
+                      y -= bounds.height / 2;
+                  }
+              }
+          }
+          return roundCoords ? [Math.round(x), Math.round(y)] : [x, y];
+      }
+
+      function stopEvent(e) {
+          e.preventDefault();
+          if (!propagate) {
+              e.stopPropagation();
+          }
+      }
+
+      function onDown(e) {
+          var target = void 0;
+          if (selector) {
+              target = selector instanceof Element ? selector.contains(e.target) ? selector : null : e.target.closest(selector);
+          } else {
+              target = {};
+          }
+
+          if (target) {
+              stopEvent(e);
+
+              var mouseOffset = selector && handleOffset ? getMousePos(e, target) : [0, 0],
+                  startPos = getMousePos(e, container, mouseOffset);
+              dragState = {
+                  target: target,
+                  mouseOffset: mouseOffset,
+                  startPos: startPos,
+                  actuallyDragged: false
+              };
+
+              if (callbackStart) {
+                  callbackStart(target, startPos);
+              }
+          }
+      }
+
+      function onMove(e) {
+          if (!dragState) {
+              return;
+          }
+          stopEvent(e);
+
+          var start = dragState.startPos,
+              pos = getMousePos(e, container, dragState.mouseOffset, !dragOutside);
+
+          dragState.actuallyDragged = dragState.actuallyDragged || start[0] !== pos[0] || start[1] !== pos[1];
+
+          callback(dragState.target, pos, start);
+      }
+
+      function onEnd(e, cancelled) {
+          if (!dragState) {
+              return;
+          }
+
+          if (callbackEnd || callbackClick) {
+              var isClick = !dragState.actuallyDragged,
+                  pos = isClick ? dragState.startPos : getMousePos(e, container, dragState.mouseOffset, !dragOutside);
+
+              if (callbackClick && isClick && !cancelled) {
+                  callbackClick(dragState.target, pos);
+              }
+              if (callbackEnd) {
+                  callbackEnd(dragState.target, pos, dragState.startPos, cancelled || isClick && callbackClick);
+              }
+          }
+          dragState = null;
+      }
+
+
+      addEvent(container, 'mousedown', function (e) {
+          if (isLeftButton(e)) {
+              onDown(e);
+          } else {
+              onEnd(e, true);
+          }
+      });
+      addEvent(container, 'touchstart', function (e) {
+          return relayTouch(e, onDown);
+      });
+
+      addEvent(root, 'mousemove', function (e) {
+          if (!dragState) {
+              return;
+          }
+
+          if (isLeftButton(e)) {
+              onMove(e);
+          }
+          else {
+                  onEnd(e);
+              }
+      });
+      addEvent(root, 'touchmove', function (e) {
+          return relayTouch(e, onMove);
+      });
+
+      addEvent(container, 'mouseup', function (e) {
+          if (dragState && !isLeftButton(e)) {
+              onEnd(e);
+          }
+      });
+      function onTouchEnd(e, cancelled) {
+          onEnd(tweakTouch(e), cancelled);
+      }
+      addEvent(container, 'touchend', function (e) {
+          return onTouchEnd(e);
+      });
+      addEvent(container, 'touchcancel', function (e) {
+          return onTouchEnd(e, true);
+      });
+
+      function addEvent(target, type, handler) {
+          target.addEventListener(type, handler);
+      }
+      function isLeftButton(e) {
+          return e.buttons !== undefined ? e.buttons === 1 :
+          e.which === 1;
+      }
+      function relayTouch(e, handler) {
+          if (e.touches.length !== 1) {
+              onEnd(e, true);return;
+          }
+
+          handler(tweakTouch(e));
+      }
+      function tweakTouch(e) {
+          var touch = e.targetTouches[0];
+          if (!touch) {
+              touch = e.changedTouches[0];
+          }
+
+          touch.preventDefault = e.preventDefault.bind(e);
+          touch.stopPropagation = e.stopPropagation.bind(e);
+          return touch;
+      }
+  }
+
+
+  function parseHTML(htmlString) {
+      var div = document.createElement('div');
+      div.innerHTML = htmlString;
+      return div.firstElementChild;
+  }
+
+  function addEvent(target, type, handler) {
+      target.addEventListener(type, handler, false);
+  }
+
+  var BG_TRANSP = 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'2\' height=\'2\'%3E%3Cpath d=\'M1,0H0V1H2V2H1\' fill=\'lightgrey\'/%3E%3C/svg%3E")';
+  var HUES = 360;
+
+  document.documentElement.firstElementChild 
+  .appendChild(document.createElement('style')).textContent = '.picker_wrapper.no_alpha .picker_alpha,.picker_wrapper.no_editor .picker_editor{display:none}.layout_default.picker_wrapper{display:flex;flex-flow:row wrap;justify-content:space-between;align-items:stretch;font-size:10px;width:25em;padding:.5em}.layout_default.picker_wrapper input,.layout_default.picker_wrapper button{font-size:1rem}.layout_default.picker_wrapper>*{margin:.5em}.layout_default.picker_wrapper::before{content:\'\';display:block;width:100%;height:0;order:1}.layout_default .picker_slider,.layout_default .picker_selector{padding:1em}.layout_default .picker_hue{width:100%}.layout_default .picker_sl{flex:1 1 auto}.layout_default .picker_sl::before{content:\'\';display:block;padding-bottom:100%}.layout_default .picker_editor{order:1;width:6rem}.layout_default .picker_editor input{width:calc(100% + 2px);height:calc(100% + 2px)}.layout_default .picker_sample{order:1;flex:1 1 auto}.layout_default .picker_done{order:1}.picker_wrapper{box-sizing:border-box;background:#f2f2f2;cursor:default;font-family:sans-serif;pointer-events:auto}.picker_wrapper button,.picker_wrapper input{margin:-1px}.picker_selector{position:absolute;z-index:1;display:block;transform:translate(-50%, -50%);border:2px solid white;border-radius:100%;box-shadow:0 0 3px 1px #67b9ff;background:currentColor;cursor:pointer}.picker_slider .picker_selector{border-radius:2px}.picker_hue{position:relative;background-image:linear-gradient(90deg, red, yellow, lime, cyan, blue, magenta, red);box-shadow:0 0 0 1px silver}.picker_sl{position:relative;box-shadow:0 0 0 1px silver;background-image:linear-gradient(180deg, white, rgba(255,255,255,0) 50%),linear-gradient(0deg, black, rgba(0,0,0,0) 50%),linear-gradient(90deg, gray, rgba(128,128,128,0))}.picker_alpha,.picker_sample{position:relative;background:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'2\' height=\'2\'%3E%3Cpath d=\'M1,0H0V1H2V2H1\' fill=\'lightgrey\'/%3E%3C/svg%3E") left top/contain white;box-shadow:0 0 0 1px silver}.picker_alpha .picker_selector,.picker_sample .picker_selector{background:none}.picker_editor input{box-sizing:border-box;font-family:monospace;padding:.1em .2em}.picker_sample::before{content:\'\';position:absolute;display:block;width:100%;height:100%;background:currentColor}.picker_done button{box-sizing:border-box;padding:.2em .5em;cursor:pointer}.picker_arrow{position:absolute;z-index:-1}.picker_wrapper.popup{position:absolute;z-index:2;margin:1.5em}.picker_wrapper.popup,.picker_wrapper.popup .picker_arrow::before,.picker_wrapper.popup .picker_arrow::after{background:#f2f2f2;box-shadow:0 0 10px 1px rgba(0,0,0,0.4)}.picker_wrapper.popup .picker_arrow{width:3em;height:3em;margin:0}.picker_wrapper.popup .picker_arrow::before,.picker_wrapper.popup .picker_arrow::after{content:"";display:block;position:absolute;top:0;left:0;z-index:-99}.picker_wrapper.popup .picker_arrow::before{width:100%;height:100%;transform:skew(45deg);transform-origin:0 100%}.picker_wrapper.popup .picker_arrow::after{width:150%;height:150%;box-shadow:none}.popup.popup_top{bottom:100%;left:0}.popup.popup_top .picker_arrow{bottom:0;left:0;transform:rotate(-90deg)}.popup.popup_bottom{top:100%;left:0}.popup.popup_bottom .picker_arrow{top:0;left:0;transform:rotate(90deg) scale(1, -1)}.popup.popup_left{top:0;right:100%}.popup.popup_left .picker_arrow{top:0;right:0;transform:scale(-1, 1)}.popup.popup_right{top:0;left:100%}.popup.popup_right .picker_arrow{top:0;left:0}';
+
+  var Picker = function () {
+
+
+      function Picker(options) {
+          var _this = this;
+
+          classCallCheck(this, Picker);
+
+
+          this.settings = {
+              popup: 'right',
+              layout: 'default',
+              alpha: true,
+              editor: true
+          };
+
+          this._openProxy = function (e) {
+              return _this.openHandler(e);
+          };
+
+          this.onChange = null;
+          this.onDone = null;
+          this.onOpen = null;
+          this.onClose = null;
+
+          this.setOptions(options);
+      }
+
+
+
+      createClass(Picker, [{
+          key: 'setOptions',
+          value: function setOptions(options) {
+              if (!options) {
+                  return;
+              }
+              var settings = this.settings;
+
+              function transfer(source, target, skipKeys) {
+                  for (var key in source) {
+                      if (skipKeys && skipKeys.indexOf(key) >= 0) {
+                          continue;
+                      }
+
+                      target[key] = source[key];
+                  }
+              }
+
+              if (options instanceof HTMLElement) {
+                  settings.parent = options;
+              } else {
+
+
+                  if (settings.parent && options.parent && settings.parent !== options.parent) {
+                      settings.parent.removeEventListener('click', this._openProxy, false);
+                      this._popupInited = false;
+                  }
+
+                  transfer(options, settings );
+
+                  if (options.onChange) {
+                      this.onChange = options.onChange;
+                  }
+                  if (options.onDone) {
+                      this.onDone = options.onDone;
+                  }
+                  if (options.onOpen) {
+                      this.onOpen = options.onOpen;
+                  }
+                  if (options.onClose) {
+                      this.onClose = options.onClose;
+                  }
+
+                  var col = options.color || options.colour;
+                  if (col) {
+                      this._setColor(col);
+                  }
+              }
+
+              if (settings.parent && settings.popup && !this._popupInited) {
+
+                  addEvent(settings.parent, 'click', this._openProxy);
+
+
+                  this._popupInited = true;
+              } else if (options.parent && !settings.popup) {
+                  this.show();
+              }
+          }
+
+
+      }, {
+          key: 'openHandler',
+          value: function openHandler(e) {
+              if (this.show()) {
+                  this.settings.parent.style.pointerEvents = 'none';
+
+                  if (this.onOpen) {
+                      this.onOpen(this.colour);
+                  }
+              }
+          }
+
+
+      }, {
+          key: 'closeHandler',
+          value: function closeHandler(e) {
+              var doHide = false;
+
+              if (!e) {
+                  doHide = true;
+              }
+              else if (e.type === 'mousedown') {
+                      if (!this.domElement.contains(e.target)) {
+                          doHide = true;
+                      }
+                  }
+                  else {
+                          e.preventDefault();
+                          e.stopPropagation();
+
+                          doHide = true;
+                      }
+
+              if (doHide && this.hide()) {
+                  this.settings.parent.style.pointerEvents = '';
+
+                  if (this.onClose) {
+                      this.onClose(this.colour);
+                  }
+              }
+          }
+
+
+      }, {
+          key: 'movePopup',
+          value: function movePopup(options, open) {
+              this.closeHandler();
+
+              this.setOptions(options);
+              if (open) {
+                  this.openHandler();
+              }
+          }
+
+
+      }, {
+          key: 'setColor',
+          value: function setColor(color, silent) {
+              this._setColor(color, { silent: silent });
+          }
+      }, {
+          key: '_setColor',
+          value: function _setColor(color, flags) {
+              var c = new Color(color);
+              if (!this.settings.alpha) {
+                  var hsla = c.hsla;
+                  hsla[3] = 1;
+                  c.hsla = hsla;
+              }
+              this.colour = this.color = c;
+              this._setHSLA(null, null, null, null, flags);
+          }
+
+      }, {
+          key: 'setColour',
+          value: function setColour(colour, silent) {
+              this.setColor(colour, silent);
+          }
+
+
+      }, {
+          key: 'show',
+          value: function show() {
+              var parent = this.settings.parent;
+              if (!parent) {
+                  return false;
+              }
+
+              if (this.domElement) {
+                  var toggled = this._toggleDOM(true);
+
+                  this._setPosition();
+
+                  return toggled;
+              }
+
+              var html = this.settings.template || '<div class="picker_wrapper"><div class="picker_arrow"></div><div class="picker_hue picker_slider"><div class="picker_selector"></div></div><div class="picker_sl"><div class="picker_selector"></div></div><div class="picker_alpha picker_slider"><div class="picker_selector"></div></div><div class="picker_editor"><input/></div><div class="picker_sample"></div><div class="picker_done"><button>Ok</button></div></div>';
+              var wrapper = parseHTML(html);
+
+              this.domElement = wrapper;
+              this._domH = wrapper.querySelector('.picker_hue');
+              this._domSL = wrapper.querySelector('.picker_sl');
+              this._domA = wrapper.querySelector('.picker_alpha');
+              this._domEdit = wrapper.querySelector('.picker_editor input');
+              this._domSample = wrapper.querySelector('.picker_sample');
+              this._domOkay = wrapper.querySelector('.picker_done button');
+
+              wrapper.classList.add('layout_' + this.settings.layout);
+              if (!this.settings.alpha) {
+                  wrapper.classList.add('no_alpha');
+              }
+              if (!this.settings.editor) {
+                  wrapper.classList.add('no_editor');
+              }
+              this._ifPopup(function () {
+                  return wrapper.classList.add('popup');
+              });
+
+              this._setPosition();
+
+              if (this.colour) {
+                  this._updateUI();
+              } else {
+                  this._setColor('#0cf');
+              }
+              this._bindEvents();
+
+              return true;
+          }
+
+
+      }, {
+          key: 'hide',
+          value: function hide() {
+              return this._toggleDOM(false);
+          }
+
+
+      }, {
+          key: '_bindEvents',
+          value: function _bindEvents() {
+              var _this2 = this;
+
+              var that = this;
+
+
+              function createDragConfig(container, callbackRelative) {
+
+                  function relayDrag(_, pos) {
+                      var relX = pos[0] / container.clientWidth,
+                          relY = pos[1] / container.clientHeight;
+                      callbackRelative(relX, relY);
+                  }
+
+                  var config = {
+                      container: container,
+                      dragOutside: false,
+                      callback: relayDrag,
+                      callbackClick: relayDrag,
+                      callbackDragStart: relayDrag,
+                      propagateEvents: true
+                  };
+                  return config;
+              }
+
+              dragTracker(createDragConfig(this._domH, function (x, y) {
+                  return that._setHSLA(x);
+              }));
+
+              dragTracker(createDragConfig(this._domSL, function (x, y) {
+                  return that._setHSLA(null, x, 1 - y);
+              }));
+
+              if (this.settings.alpha) {
+                  dragTracker(createDragConfig(this._domA, function (x, y) {
+                      return that._setHSLA(null, null, null, 1 - y);
+                  }));
+              }
+
+
+              if (this.settings.editor) {
+                  addEvent(this._domEdit, 'input', function (e) {
+                      var color = this.value;
+                      try {
+                          new Color(this.value);
+
+                          that._setColor(color, { fromEditor: true });
+                      } catch (ex) {}
+                  });
+              }
+
+
+              addEvent(window, 'mousedown', function (e) {
+                  return _this2._ifPopup(function () {
+                      return _this2.closeHandler(e);
+                  });
+              });
+
+              addEvent(this._domOkay, 'click', function (e) {
+                  _this2._ifPopup(function () {
+                      return _this2.closeHandler(e);
+                  });
+
+                  if (_this2.onDone) {
+                      _this2.onDone(_this2.colour);
+                  }
+              });
+          }
+
+
+      }, {
+          key: '_setPosition',
+          value: function _setPosition() {
+              var parent = this.settings.parent,
+                  elm = this.domElement;
+
+              if (parent !== elm.parentNode) {
+                  parent.appendChild(elm);
+              }
+
+              this._ifPopup(function (popup) {
+
+                  if (getComputedStyle(parent).position === 'static') {
+                      parent.style.position = 'relative';
+                  }
+
+                  var cssClass = popup === true ? 'popup_right' : 'popup_' + popup;
+
+                  ['popup_top', 'popup_bottom', 'popup_left', 'popup_right'].forEach(function (c) {
+                      if (c === cssClass) {
+                          elm.classList.add(c);
+                      } else {
+                          elm.classList.remove(c);
+                      }
+                  });
+
+                  elm.classList.add(cssClass);
+              });
+          }
+
+
+      }, {
+          key: '_setHSLA',
+          value: function _setHSLA(h, s, l, a, flags) {
+              flags = flags || {};
+
+              var col = this.colour,
+                  hsla = col.hsla;
+
+              [h, s, l, a].forEach(function (x, i) {
+                  if (x || x === 0) {
+                      hsla[i] = x;
+                  }
+              });
+              col.hsla = hsla;
+
+              this._updateUI(flags);
+
+              if (this.onChange && !flags.silent) {
+                  this.onChange(col);
+              }
+          }
+      }, {
+          key: '_updateUI',
+          value: function _updateUI(flags) {
+              if (!this.domElement) {
+                  return;
+              }
+              flags = flags || {};
+
+              var col = this.colour,
+                  hsl = col.hsla,
+                  cssHue = 'hsl(' + hsl[0] * HUES + ', 100%, 50%)',
+                  cssHSL = col.hslString,
+                  cssHSLA = col.hslaString;
+
+              var uiH = this._domH,
+                  uiSL = this._domSL,
+                  uiA = this._domA;
+
+              function posX(parent, child, relX) {
+                  child.style.left = relX * 100 + '%'; 
+              }
+              function posY(parent, child, relY) {
+                  child.style.top = relY * 100 + '%'; 
+              }
+
+
+              posX(uiH, uiH.firstElementChild, hsl[0]);
+
+              this._domSL.style.backgroundColor = this._domH.style.color = cssHue;
+
+
+              posX(uiSL, uiSL.firstElementChild, hsl[1]);
+              posY(uiSL, uiSL.firstElementChild, 1 - hsl[2]);
+
+              uiSL.style.color = cssHSL;
+
+
+              posY(uiA, uiA.firstElementChild, 1 - hsl[3]);
+
+              var opaque = cssHSL,
+                  transp = opaque.replace('hsl', 'hsla').replace(')', ', 0)'),
+                  bg = 'linear-gradient(' + [opaque, transp] + ')';
+
+              this._domA.style.backgroundImage = bg + ', ' + BG_TRANSP;
+
+
+              if (!flags.fromEditor) {
+                  var hex = col.hex;
+                  this._domEdit.value = this.settings.alpha ? hex : hex.substr(0, 7);
+              }
+
+
+              this._domSample.style.color = cssHSLA;
+          }
+      }, {
+          key: '_ifPopup',
+          value: function _ifPopup(actionIf, actionElse) {
+              if (this.settings.parent && this.settings.popup) {
+                  actionIf && actionIf(this.settings.popup);
+              } else {
+                  actionElse && actionElse();
+              }
+          }
+      }, {
+          key: '_toggleDOM',
+          value: function _toggleDOM(toVisible) {
+              var dom = this.domElement;
+              if (!dom) {
+                  return false;
+              }
+
+              var displayStyle = toVisible ? '' : 'none',
+                  toggle = dom.style.display !== displayStyle;
+
+              if (toggle) {
+                  dom.style.display = displayStyle;
+              }
+              return toggle;
+          }
+
+
+      }]);
+      return Picker;
+  }();
+
+  return Picker;
+
+})));
+
+},{}],52:[function(require,module,exports){
+module.exports = extend
+
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function extend() {
+    var target = {}
+
+    for (var i = 0; i < arguments.length; i++) {
+        var source = arguments[i]
+
+        for (var key in source) {
+            if (hasOwnProperty.call(source, key)) {
+                target[key] = source[key]
+            }
+        }
+    }
+
+    return target
+}
+
+},{}]},{},[1]);
+</script>
+</html>
