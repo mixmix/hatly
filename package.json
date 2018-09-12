@@ -1,0 +1,30 @@
+{
+  "name": "hatly",
+  "version": "0.0.1",
+  "description": "design knitting patterns for top of hats",
+  "main": "index.js",
+  "scripts": {
+    "test": "electro index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mixmix/hatly.git"
+  },
+  "keywords": [
+    "hats",
+    "knitting"
+  ],
+  "author": "mixmix",
+  "license": "AGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/mixmix/hatly/issues"
+  },
+  "homepage": "https://github.com/mixmix/hatly#readme",
+  "dependencies": {
+    "mutant": "^3.22.1"
+  },
+  "devDependencies": {
+    "electro": "^2.1.1",
+    "electron": "^2.0.9"
+  }
+}
