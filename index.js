@@ -1,24 +1,30 @@
-const { h, Array: MutantArray, computed, map } = require('mutant')
-const Segment = require('./segment')
+const { h, Array: MutantArray, Value, resolve, computed } = require('mutant')
+const Picker = require('vanilla-picker')
+const Segment = require('./components/segment')
+const Colors = require('./components/colors')
+const Preview = require('./components/preview')
+const style = require('./style')
 
 const HEIGHT = 26
 const WIDTH = 25
 // const JOIN_WIDTH = 1
 
-// 0: 12 1 12
-// 1: 12 1 12
-// 2: 11 3 11
-// 3: 11 3 11
-// 4:  9 5 9
-
-
 const state = {
   width: WIDTH,
   height: HEIGHT,
   board: MutantArray(initialState()),
-  colors: MutantArray([ 'teal', 'hotpink', 'rebeccapurple' ])
+  colors: MutantArray([ 'teal', 'hotpink', 'rebeccapurple', 'fuchsia' ]),
+  activeColor: Value(0)
 }
-const colorLabels = [ 'background', 'primary', 'secondary' ]
+
+window.addEventListener('keyup', ev => {
+  const n = Number(ev.key)
+  if (!n) return
+
+  if (n > 0 && n -1 < resolve(state.colors).length) {
+    state.activeColor.set(n - 1)
+  }
+})
 
 const app = h('App', [
   h('div.settings',
@@ -26,7 +32,7 @@ const app = h('App', [
       style: {
         display: 'grid',
         'grid-template-columns': 'auto 1fr'
-      }
+      },
     }, [
       Segment(state, { editable: true }),
       Colors(state),
@@ -34,54 +40,6 @@ const app = h('App', [
   ),
   Preview(state)
 ])
-
-function Colors (state) {
-  const style =  {
-      display: 'grid',
-      'grid-template-columns': 'auto 1fr',
-      'grid-gap': '1rem',
-      'align-content': 'start'
-    }
-  return h('Colors', { style },
-    colorLabels.map((label, i) => {
-      return [
-        h('label', label),
-        h('input', {
-          'ev-input': ev => {
-            state.colors.put(i, ev.target.value)
-          },
-          value: computed(state.colors, colors => colors[i])
-        })
-      ]
-    })
-  )
-}
-
-function Preview (state) {
-  const dummy = Array(7).fill(null).map((_, i) => i)
-
-  const pixelSize = 10
-  const gapSize = 0
-  const radius = state.height * pixelSize + (state.height - 1) * gapSize
-
-  const style = {
-    width: `${2 * radius}px`,
-    height: `${2 * radius}px`,
-    position: 'relative'
-  }
-
-  return h('Preview', { style }, [
-    dummy.map((_, i) => {
-      const style = {
-        position: 'absolute',
-        transform: `translate(100%, 150%) rotate(${360/7 * i}deg)`,
-        'transform-origin': '50% -5%',
-        filter: 'blur(2px)'
-      }
-      return h('div', { style }, Segment(state, { pixelSize, gapSize }))
-    })
-  ])
-}
 
 function initialState () {
   return Array(WIDTH*HEIGHT)
@@ -108,3 +66,4 @@ function initialState () {
 }
 
 document.body.appendChild(app)
+document.head.appendChild(style)

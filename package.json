@@ -21,7 +21,10 @@
   },
   "homepage": "https://github.com/mixmix/hatly#readme",
   "dependencies": {
-    "mutant": "^3.22.1"
+    "micro-css": "^2.0.1",
+    "mutant": "^3.22.1",
+    "read-directory": "^3.0.0",
+    "vanilla-picker": "^2.4.3"
   },
   "devDependencies": {
     "electro": "^2.1.1",

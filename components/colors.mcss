@@ -1,0 +1,27 @@
+Colors {
+  display: grid
+  grid-template-columns: auto 1fr
+  grid-gap: .5rem
+  align-content: start
+  align-items: center
+  justify-items: center
+
+  label {
+    width: 20px
+    height: 20px
+    border: 1px solid rgba(0,0,0,0)
+    text-align: center
+
+    -active {
+      border: 1px solid #000
+    }
+  }
+
+  input {
+    color: #fff
+    font-family: arial, sans
+    padding: .2rem
+
+    border: none
+  }
+}

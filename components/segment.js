@@ -1,4 +1,4 @@
-const { h, computed } = require('mutant')
+const { h, computed, resolve } = require('mutant')
 
 module.exports = function Segment (state, opts = {}) {
   const {
@@ -35,15 +35,15 @@ module.exports = function Segment (state, opts = {}) {
 
         return h('Cel', { 
           style,
-          'ev-click': () => incrementCel(cel, i)
+          'ev-click': () => changeColor(cel, i)
         })
       })
     ])
   })
 
 
-  function incrementCel (cel, i) {
-    state.board.put(i, (cel + 1) % 3)
+  function changeColor (cel, i) {
+    state.board.put(i, resolve(state.activeColor))
 
     const row = getRow(i)
     const col = getCol(i)
@@ -51,7 +51,7 @@ module.exports = function Segment (state, opts = {}) {
     if (radius === 0) return
 
     const mirrorI = row * width + 12 + radius
-    state.board.put(mirrorI, (cel + 1) % 3)
+    state.board.put(mirrorI, resolve(state.activeColor))
   }
 
   // repeated...
